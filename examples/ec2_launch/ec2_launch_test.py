@@ -1,15 +1,19 @@
 import os
 
 import doodad as dd
+from doodad import mode
 import doodad.ec2 as ec2
 import doodad.ssh as ssh
 import doodad.mount as mount
 from doodad.utils import EXAMPLES_DIR, REPO_DIR
 
+# Local
+mode_local = dd.mode.Local()
 
 # Local docker
 mode_docker = dd.mode.LocalDocker(
-    image='python:3.5',
+    # image='python:3.5',
+    image='vitchyr/rllab-vitchyr',
 )
 
 # or this! Run experiment via docker on another machine through SSH
@@ -18,19 +22,21 @@ mode_ssh = dd.mode.SSHDocker(
     credentials=ssh.SSHCredentials(hostname='my.machine.name', username='my_username', identity_file='~/.ssh/id_rsa'),
 )
 
-# or use this! 
+# or use this!
 mode_ec2=None
-#mode_ec2 = dd.mode.EC2AutoconfigDocker(
-#    image='python:3.5',
-#    region='us-west-1',
-#    instance_type='m3.medium',
-#    spot_price=0.02,
-#)
+mode_ec2 = dd.mode.EC2AutoconfigDocker(
+    image='vitchyr/rllab-vitchyr',
+    region='us-west-1',
+    instance_type='c4.large',
+    spot_price=0.03,
+)
 
-MY_RUN_MODE = mode_docker  # CHANGE THIS
+MY_RUN_MODE = mode_local
+# MY_RUN_MODE = mode_ec2
 
 # Set up code and output directories
-OUTPUT_DIR = '/example/outputs'  # this is the directory visible to the target 
+OUTPUT_DIR = '/tmp/tmp_output_from_doodad'
+# OUTPUT_DIR = '/tmp/doodad-output/'
 mounts = [
     mount.MountLocal(local_dir=REPO_DIR, pythonpath=True), # Code
     mount.MountLocal(local_dir=os.path.join(EXAMPLES_DIR, 'secretlib'), pythonpath=True), # Code
@@ -39,8 +45,12 @@ mounts = [
 if MY_RUN_MODE == mode_ec2:
     output_mount = mount.MountS3(s3_path='outputs', mount_point=OUTPUT_DIR, output=True)  # use this for ec2
 else:
-    output_mount = mount.MountLocal(local_dir=os.path.join(EXAMPLES_DIR, 'tmp_output'), 
-        mount_point=OUTPUT_DIR, output=True)
+    output_mount = mount.MountLocal(
+        local_dir=os.path.join(EXAMPLES_DIR, 'tmp_output'),
+        # local_dir='/tmp/config',
+        mount_point=OUTPUT_DIR,
+        output=True
+    )
 mounts.append(output_mount)
 
 print(mounts)
