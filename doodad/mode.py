@@ -66,10 +66,11 @@ LOCAL = Local()
 
 
 class DockerMode(LaunchMode):
-    def __init__(self, image='ubuntu:16.04'):
+    def __init__(self, image='ubuntu:16.04', gpu=False):
         super(DockerMode, self).__init__()
         self.docker_image = image
         self.docker_name = uuid.uuid4()
+        self.gpu = gpu
 
     def get_docker_cmd(self, main_cmd, extra_args='', use_tty=True, verbose=True, pythonpath=None, pre_cmd=None, post_cmd=None,
             checkpoint=False, no_root=False):
@@ -78,7 +79,10 @@ class DockerMode(LaunchMode):
             cmd_list.extend(pre_cmd)
 
         if verbose:
-            cmd_list.append('echo \"Running in docker\"')
+            if self.gpu:
+                cmd_list.append('echo \"Running in docker (gpu)\"')
+            else:
+                cmd_list.append('echo \"Running in docker\"')
         if pythonpath:
             cmd_list.append('export PYTHONPATH=$PYTHONPATH:%s' % (':'.join(pythonpath)))
         if no_root:
@@ -106,6 +110,8 @@ class DockerMode(LaunchMode):
             docker_prefix = 'docker run %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
         else:
             docker_prefix = 'docker run %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+        if self.gpu:
+            docker_prefix = 'nvidia-'+docker_prefix
         main_cmd = cmd_list.to_string()
         full_cmd = docker_prefix + ("\'%s\'" % main_cmd)
         return full_cmd
@@ -128,7 +134,7 @@ class LocalDocker(DockerMode):
                 if mount.pythonpath:
                     py_path.append(mount_pnt)
             else:
-                raise NotImplementedError()
+                raise NotImplementedError(type(mount))
 
         full_cmd = self.get_docker_cmd(cmd, extra_args=mnt_args, pythonpath=py_path,
                 checkpoint=self.checkpoints)
@@ -245,7 +251,8 @@ class EC2SpotDocker(DockerMode):
         f.write(script_content.encode())
         f.close()
         remote_path = os.path.join(self.s3_mount_path, 'oversize_bash_scripts', str(uuid.uuid4()))
-        subprocess.check_call(["aws", "s3", "cp", f.name, remote_path])
+        subprocess.check_call(["aws", "s3", "cp", f.name, remote_path,
+                               '--region', self.region])
         os.unlink(f.name)
         return remote_path
 
@@ -254,10 +261,10 @@ class EC2SpotDocker(DockerMode):
             remote_filename = os.path.basename(file_name)
         remote_path = 'doodad/mount/'+remote_filename
         if check_exist:
-            if s3_exists(bucket, remote_path):
+            if s3_exists(bucket, remote_path, region=self.region):
                 print('\t%s exists! ' % os.path.join(bucket, remote_path))
                 return 's3://'+os.path.join(bucket, remote_path)
-        return s3_upload(file_name, bucket, remote_path, dry=dry)
+        return s3_upload(file_name, bucket, remote_path, dry=dry, region=self.region)
 
     def make_timekey(self):
         return '%d'%(int(time.time()*1000))
@@ -311,12 +318,18 @@ class EC2SpotDocker(DockerMode):
             print('Handling mount: ', mount)
             if isinstance(mount, MountLocal):  # TODO: these should be mount_s3 objects
                 if mount.read_only:
-                    with mount.gzip() as gzip_file:
-                        gzip_path = os.path.realpath(gzip_file)
-                        file_hash = hash_file(gzip_path)
-                        s3_path = self.s3_upload(gzip_path, self.s3_bucket, remote_filename=file_hash+'.tar')
-                        remote_tar_name = '/tmp/'+file_hash+'.tar'
-                        remote_unpack_name = '/tmp/'+file_hash
+                    if mount.path_on_remote is None:
+                        with mount.gzip() as gzip_file:
+                            gzip_path = os.path.realpath(gzip_file)
+                            file_hash = hash_file(gzip_path)
+                            s3_path = self.s3_upload(gzip_path, self.s3_bucket, remote_filename=file_hash+'.tar')
+                        mount.path_on_remote = s3_path
+                        mount.local_file_hash = gzip_path
+                    else:
+                        file_hash = mount.local_file_hash
+                        s3_path = mount.path_on_remote
+                    remote_tar_name = '/tmp/'+file_hash+'.tar'
+                    remote_unpack_name = '/tmp/'+file_hash
                     sio.write("aws s3 cp {s3_path} {remote_tar_name}\n".format(s3_path=s3_path, remote_tar_name=remote_tar_name))
                     sio.write("mkdir -p {local_code_path}\n".format(local_code_path=remote_unpack_name))
                     sio.write("tar -xvf {remote_tar_name} -C {local_code_path}\n".format(
@@ -393,6 +406,29 @@ class EC2SpotDocker(DockerMode):
 
         sio.write("aws ec2 create-tags --resources $EC2_INSTANCE_ID --tags Key=Name,Value={exp_name} --region {aws_region}\n".format(
             exp_name=exp_name, aws_region=self.region))
+
+        if self.gpu:
+            #sio.write('echo "LSMOD NVIDIA:"\n')
+            #sio.write("lsmod | grep nvidia\n")
+            #sio.write("echo 'Waiting for dpkg lock...'\n")
+            # wait for lock
+            #sio.write("""
+            #    while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+            #       sleep 1
+            #    done
+            #""")
+            #sio.write("sudo apt-get install nvidia-modprobe\n")
+            #sio.write("wget -P /tmp https://github.com/NVIDIA/nvidia-docker/releases/download/v1.0.1/nvidia-docker_1.0.1-1_amd64.deb\n")
+            #sio.write("sudo dpkg -i /tmp/nvidia-docker*.deb && rm /tmp/nvidia-docker*.deb\n")
+            sio.write("""
+                for i in {1..800}; do su -c "nvidia-modprobe -u -c=0" ubuntu && break || sleep 3; done
+                systemctl start nvidia-docker
+            """)
+            sio.write("echo 'Testing nvidia-smi'\n")
+            sio.write("nvidia-smi\n")
+            sio.write("echo 'Testing nvidia-smi inside docker'\n")
+            sio.write("nvidia-docker run --rm {docker_image} nvidia-smi\n".format(docker_image=self.docker_image))
+
         if self.checkpoint and self.checkpoint.restore:
             raise NotImplementedError()
         else:
@@ -504,12 +540,13 @@ class EC2SpotDocker(DockerMode):
 class EC2AutoconfigDocker(EC2SpotDocker):
     def __init__(self,
             region='us-west-1',
+            s3_bucket=None,
             **kwargs
             ):
         # find config file
         from doodad.ec2.autoconfig import AUTOCONFIG
         from doodad.ec2.credentials import AWSCredentials
-        s3_bucket = AUTOCONFIG.s3_bucket()
+        s3_bucket = AUTOCONFIG.s3_bucket() if s3_bucket is None else s3_bucket
         image_id = AUTOCONFIG.aws_image_id(region)
         aws_key_name= AUTOCONFIG.aws_key_name(region)
         iam_profile= AUTOCONFIG.iam_profile_name()
