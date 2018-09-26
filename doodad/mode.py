@@ -1,4 +1,5 @@
 import os
+import stat
 import subprocess
 import tempfile
 import uuid
@@ -25,7 +26,8 @@ class Local(LaunchMode):
         super(Local, self).__init__()
         self.env = {}
 
-    def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
+    def launch_command(self, cmd, mount_points=None, dry=False,
+                       verbose=False, skip_wait=False):
         if dry:
             print(cmd); return
 
@@ -61,7 +63,7 @@ class Local(LaunchMode):
         commands.extend(cleanup_commands)
 
         # Call everything
-        commands.call_and_wait()
+        commands.call_and_wait(verbose=verbose, dry=dry, skip_wait=skip_wait)
 
 LOCAL = Local()
 
@@ -123,7 +125,8 @@ class LocalDocker(DockerMode):
         super(LocalDocker, self).__init__(**kwargs)
         self.checkpoints = checkpoints
 
-    def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
+    def launch_command(self, cmd, mount_points=None, dry=False,
+                       verbose=False, skip_wait=False):
         mnt_args = ''
         py_path = []
         for mount in mount_points:
@@ -139,9 +142,7 @@ class LocalDocker(DockerMode):
 
         full_cmd = self.get_docker_cmd(cmd, extra_args=mnt_args, pythonpath=py_path,
                 checkpoint=self.checkpoints)
-        if verbose:
-            print(full_cmd)
-        call_and_wait(full_cmd, dry=dry)
+        call_and_wait(full_cmd, verbose=verbose, dry=dry, skip_wait=skip_wait)
 
 
 class SSHDocker(DockerMode):
@@ -473,9 +474,14 @@ class EC2SpotDocker(DockerMode):
                 s3_dir=s3_dir_path
             ))
         if num_exps == 1:
-            sio.write("aws s3 cp /home/ubuntu/user_data.log {s3_dir_path}/stdout.log\n".format(s3_dir_path=s3_base_dir))
+            sio.write("aws s3 cp /home/ubuntu/user_data.log {s3_path}\n".format(
+                s3_path=os.path.join(s3_base_dir, 'stdout.log'),
+            ))
         else:
-            sio.write("aws s3 cp /home/ubuntu/user_data.log {s3_dir_path}/stdout_$EC2_INSTANCE_ID.log\n".format(s3_dir_path=s3_base_dir))
+            sio.write("aws s3 cp /home/ubuntu/user_data.log {s3_path}\n".format(
+                s3_path=os.path.join(s3_base_dir,
+                                     'stdout_$EC2_INSTANCE_ID.log'),
+            ))
 
         # Wait for last sync
         if max_sync_interval > 0:
@@ -653,7 +659,8 @@ class SingularityMode(LaunchMode):
 
 class LocalSingularity(SingularityMode):
     def launch_command(self, cmd, mount_points=None, dry=False,
-                       verbose=False, pre_cmd=None, post_cmd=None):
+                       verbose=False, pre_cmd=None, post_cmd=None,
+                       skip_wait=False):
         py_path = []
         for mount in mount_points:
             if isinstance(mount, MountLocal):
@@ -669,9 +676,7 @@ class LocalSingularity(SingularityMode):
             post_cmd=post_cmd,
             verbose=verbose,
         )
-        if verbose:
-            print(full_cmd)
-        call_and_wait(full_cmd, dry=dry)
+        call_and_wait(full_cmd, verbose=verbose, dry=dry, skip_wait=skip_wait)
 
 
 class SlurmSingularity(LocalSingularity):
@@ -692,8 +697,8 @@ class SlurmSingularity(LocalSingularity):
         self.n_tasks = n_tasks
         self.n_gpus = n_gpus
 
-    def launch_command(self, cmd, mount_points=None, dry=False,
-                       verbose=False, pre_cmd=None, post_cmd=None):
+    def create_slurm_command(self, cmd, mount_points=None,
+                             verbose=False, pre_cmd=None, post_cmd=None):
         if pre_cmd is None:
             pre_cmd = []
         py_path = []
@@ -735,4 +740,32 @@ class SlurmSingularity(LocalSingularity):
             )
         if verbose:
             print(full_cmd)
+        return full_cmd
+
+    def launch_command(self, cmd, dry=False, **kwargs):
+        full_cmd = self.create_slurm_command(cmd, **kwargs)
         call_and_wait(full_cmd, dry=dry)
+
+
+class ScriptSlurmSingularity(SlurmSingularity):
+    """
+    Create or add to a script to run a bunch of slurm jobs.
+    """
+    TMP_FILE = '/tmp/script_to_scp_over.sh'
+
+    def launch_command(
+            self, cmd, first_launch_command=False,
+            dry=False, **kwargs
+    ):
+        full_cmd = self.create_slurm_command(cmd, **kwargs)
+        if first_launch_command:
+            with open(self.TMP_FILE, "w") as myfile:
+                myfile.write(full_cmd + '\n')
+            # make file executable
+            st = os.stat(self.TMP_FILE)
+            os.chmod(self.TMP_FILE, st.st_mode | stat.S_IEXEC)
+            print("Script generated! scp this script over:", self.TMP_FILE)
+        else:
+            with open(self.TMP_FILE, "a") as myfile:
+                myfile.write(full_cmd + '\n')
+            print("Script updated. scp this script over:", self.TMP_FILE)
