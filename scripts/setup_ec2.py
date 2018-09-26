@@ -348,7 +348,7 @@ def write_config():
 
 def setup():
     print("Using prefix: %s" % PREFIX)
-    setup_s3()
+    # setup_s3()
     setup_iam()
     setup_ec2()
     write_config()
