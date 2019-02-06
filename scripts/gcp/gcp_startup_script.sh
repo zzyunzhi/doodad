@@ -27,6 +27,7 @@ query_metadata() {
     gcp_mounts=$(query_metadata gcp_mounts)
     use_gpu=$(query_metadata use_gpu)
     terminate=$(query_metadata terminate)
+    num_exps=$(query_metadata num_exps)
     instance_name=$(curl http://metadata/computeMetadata/v1/instance/name -H "Metadata-Flavor: Google")
     echo "bucket_name:" $bucket_name
     echo "docker_cmd:" $docker_cmd
@@ -72,6 +73,10 @@ query_metadata() {
     gcp_bucket_path=${gcp_bucket_path%/}  # remove trailing slash if present
     while /bin/true; do
         gsutil cp /home/ubuntu/user_data.log gs://$bucket_name/$gcp_bucket_path/${instance_name}_stdout.log
+        # Sync the output logs of each independent experiment
+        for ((i=1;i<=$num_exps;i++)); do
+            gsutil cp /home/ubuntu/stdout_$i.log gs://$bucket_name/$gcp_bucket_path/${instance_name}_exp_$i.log
+        done
         sleep 300
     done &
 
@@ -85,10 +90,19 @@ query_metadata() {
     fi
 
     echo $docker_cmd >> run_docker_command.sh
-    bash run_docker_command.sh
+
+    for ((i=1;i<=$num_exps-1;i++)); do
+        bash run_docker_command.sh > /home/ubuntu/stdout_$i.log 2>&1 &
+    done
+    bash run_docker_command.sh > /home/ubuntu/stdout_$num_exps.log 2>&1
 
     if [ "$terminate" = "true" ]; then
         echo "Finished experiment. Terminating"
+        # Trigger final sync from here in case terminate script fails.
+        gsutil cp /home/ubuntu/user_data.log gs://$bucket_name/$gcp_bucket_path/${instance_name}_stdout.log
+        for ((i=1;i<=$num_exps;i++)); do
+            gsutil cp /home/ubuntu/stdout_$i.log gs://$bucket_name/$gcp_bucket_path/${instance_name}_exp_$i.log
+        done
         zone=$(curl http://metadata/computeMetadata/v1/instance/zone -H "Metadata-Flavor: Google")
         zone="${zone##*/}"
         gcloud compute instances delete $instance_name --zone $zone --quiet

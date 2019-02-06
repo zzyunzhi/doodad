@@ -634,6 +634,7 @@ class GCPDocker(DockerMode):
         image_name=None,
         image_project=None,
         disk_size:"Gb"=64,
+        num_exps=1,
         terminate=True,
         preemptible=True,
         gcp_log_prefix='experiment',
@@ -653,6 +654,7 @@ class GCPDocker(DockerMode):
         self.image_project = image_project
         self.image_name = image_name
         self.preemptible = preemptible
+        self.num_exps = num_exps
 
         self.gcp_log_prefix = gcp_log_prefix
         self.gcp_log_name = gcp_log_name
@@ -716,7 +718,7 @@ class GCPDocker(DockerMode):
             else:
                 raise NotImplementedError()
 
-        docker_cmd = self.get_docker_cmd(main_cmd, use_tty=False, extra_args=mnt_args, pythonpath=py_path)
+        docker_cmd = self.get_docker_cmd(main_cmd, use_tty=False, extra_args=mnt_args, pythonpath=py_path, use_docker_generated_name=True)
 
         metadata = {
             'bucket_name': self.gcp_bucket_name,
@@ -725,6 +727,7 @@ class GCPDocker(DockerMode):
             'local_mounts': json.dumps(local_mounts),
             'gcp_mounts': json.dumps(gcp_mount_info),
             'use_gpu': json.dumps(self.gpu),
+            'num_exps': self.num_exps,
             'terminate': json.dumps(self.terminate),
             'startup-script': open(GCP_STARTUP_SCRIPT_PATH, "r").read(),
             'shutdown-script': open(GCP_SHUTDOWN_SCRIPT_PATH, "r").read(),
