@@ -86,7 +86,7 @@ class DockerMode(LaunchMode):
 
         if verbose:
             if self.gpu:
-                cmd_list.append('echo \"Running in docker (gpu)\"')
+                cmd_list.append('echo \"Running in docker with gpu\"')
             else:
                 cmd_list.append('echo \"Running in docker\"')
         if pythonpath:
@@ -152,11 +152,13 @@ class LocalDocker(DockerMode):
 class SSHDocker(DockerMode):
     TMP_DIR = '~/.remote_tmp'
 
-    def __init__(self, credentials=None, **docker_args):
+    def __init__(self, credentials=None, tmp_dir=None, **docker_args):
+        if tmp_dir is None:
+            tmp_dir = SSHDocker.TMP_DIR
         super(SSHDocker, self).__init__(**docker_args)
         self.credentials = credentials
         self.run_id = 'run_%s' % uuid.uuid4()
-        self.tmp_dir = os.path.join(SSHDocker.TMP_DIR, self.run_id)
+        self.tmp_dir = os.path.join(tmp_dir, self.run_id)
         self.checkpoint = None
 
     def launch_command(self, main_cmd, mount_points=None, dry=False, verbose=False):
@@ -870,6 +872,7 @@ class SlurmSingularity(LocalSingularity):
         nodes=1,
         n_tasks=1,
         n_gpus=1,
+        extra_args='',
         **kwargs
     ):
         super(SlurmSingularity, self).__init__(image, **kwargs)
@@ -879,6 +882,7 @@ class SlurmSingularity(LocalSingularity):
         self.nodes = nodes
         self.n_tasks = n_tasks
         self.n_gpus = n_gpus
+        self.extra_args = extra_args
 
     def create_slurm_command(self, cmd, mount_points=None, verbose=False):
         py_path = []
@@ -893,6 +897,7 @@ class SlurmSingularity(LocalSingularity):
             cmd,
             pythonpath=py_path,
             verbose=verbose,
+            extra_args=self.extra_args,
         )
         if self.gpu:
             full_cmd = (
