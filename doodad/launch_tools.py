@@ -27,6 +27,7 @@ def launch_python(
         use_cloudpickle=False,
         target_mount=None,
         launch_locally=None,
+        gpu_id=None,
         **launch_command_kwargs
 ):
     """
@@ -70,6 +71,7 @@ def launch_python(
         python_cmd=python_cmd,
         fake_display=fake_display,
         use_cloudpickle=use_cloudpickle,
+        gpu_id=gpu_id,
     )
     mode.launch_command(command, mount_points=mount_points,
                         **launch_command_kwargs)
@@ -82,8 +84,8 @@ def make_python_command(
         args=None,
         fake_display=False,
         use_cloudpickle=False,
+        gpu_id=None,
 ):
-
     if fake_display:
         cmd = '{headless} {python_cmd} {target}'.format(headless=HEADLESS, python_cmd=python_cmd, target=target)
     else:
@@ -95,6 +97,9 @@ def make_python_command(
                 USE_CLOUDPICKLE, str(int(use_cloudpickle)),
                 CLOUDPICKLE_VERSION, cp_version,
                 cmd)
+
+    if gpu_id is not None:
+        cmd = 'CUDA_VISIBLE_DEVICES=%s %s' % (gpu_id, cmd)
 
     return cmd
 

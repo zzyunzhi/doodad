@@ -75,7 +75,7 @@ class MountLocal(Mount):
             yield tf.name
 
     def __str__(self):
-        return 'MountLocal@%s'%self.local_dir
+        return 'MountLocal@%s %s'% (self.local_dir, self.mount_point)
 
     def mount_dir(self):
          return os.path.join('/mounts', self.mount_point.replace('~/',''))
