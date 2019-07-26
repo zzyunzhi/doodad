@@ -125,9 +125,9 @@ class DockerMode(LaunchMode):
             extra_args += ' -d'
 
         if use_tty:
-            docker_prefix = 'docker run %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
+            docker_prefix = 'docker run --rm %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
         else:
-            docker_prefix = 'docker run %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+            docker_prefix = 'docker run --rm %s %s /bin/bash -c ' % (extra_args, self.docker_image)
 
         if self.gpu:
             docker_prefix = 'nvidia-'+docker_prefix
@@ -229,17 +229,6 @@ class SSHDocker(DockerMode):
         remote_cmds.append(docker_cmd)
         remote_cmds.extend(remote_cleanup_commands)
 
-        # with tempfile.NamedTemporaryFile('w+', suffix='.sh') as ntf:
-        #     for cmd in remote_cmds:
-        #         if verbose:
-        #             ntf.write('echo "%s$ %s"\n' % (self.credentials.user_host, cmd))
-        #         ntf.write(cmd+'\n')
-        #     ntf.seek(0)
-        #     ssh_cmd = self.credentials.get_ssh_script_cmd(ntf.name)
-        #     print(ssh_cmd)
-        #     call_and_wait(ssh_cmd, dry=dry, verbose=verbose)
-
-        # ntf = tempfile.NamedTemporaryFile('w+', suffix='.sh')
         ntf = tempfile.NamedTemporaryFile('w+', suffix='.sh', delete=False)
         for cmd in remote_cmds:
             if verbose:
@@ -247,10 +236,7 @@ class SSHDocker(DockerMode):
             ntf.write(cmd+'\n')
         ntf.seek(0)
         ssh_cmd = self.credentials.get_ssh_script_cmd(ntf.name, quiet=(not interactive_docker))
-        print(ssh_cmd)
-        # call_and_wait(ssh_cmd, dry=dry, verbose=verbose)
         call_and_wait(ssh_cmd, dry=dry, verbose=verbose, skip_wait=(not interactive_docker))
-        # ntf.close()
 
 def dedent(s):
     lines = [l.strip() for l in s.split('\n')]
