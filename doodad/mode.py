@@ -87,7 +87,9 @@ class DockerMode(LaunchMode):
             post_cmd=None,
             checkpoint=False,
             no_root=False,
-            use_docker_generated_name=False
+            use_docker_generated_name=False,
+            remove_container_after_use=False,
+            runtime_nvidia=False,
     ):
         cmd_list= CommandBuilder()
         if pre_cmd:
@@ -124,13 +126,29 @@ class DockerMode(LaunchMode):
         if not interactive_docker:
             extra_args += ' -d'
 
-        if use_tty:
-            docker_prefix = 'docker run --rm %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
-        else:
-            docker_prefix = 'docker run --rm %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+        if remove_container_after_use:
+            extra_args += ' --rm'
 
-        if self.gpu:
-            docker_prefix = 'nvidia-'+docker_prefix
+        if use_tty:
+            if self.gpu:
+                if runtime_nvidia:
+                    docker_prefix = 'docker run --runtime=nvidia %s -ti %s /bin/bash -c ' % (
+                    extra_args, self.docker_image)
+                else:
+                    docker_prefix = 'nvidia-docker run %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
+            else:
+                docker_prefix = 'docker run %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
+        else:
+            if self.gpu:
+                if runtime_nvidia:
+                    docker_prefix = 'docker run --runtime=nvidia %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+                else:
+                    docker_prefix = 'nvidia-docker run %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+            else:
+                docker_prefix = 'docker run %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+
+        # if self.gpu:
+        #     docker_prefix = 'nvidia-'+docker_prefix
         main_cmd = cmd_list.to_string()
         full_cmd = docker_prefix + ("\'%s\'" % main_cmd)
         return full_cmd
@@ -223,7 +241,9 @@ class SSHDocker(DockerMode):
                 interactive_docker=interactive_docker,
                 use_tty=False,
                 extra_args=mnt_args,
-                pythonpath=py_path
+                pythonpath=py_path,
+                remove_container_after_use=True,
+                runtime_nvidia=True,
             )
 
         remote_cmds.append(docker_cmd)
@@ -484,7 +504,14 @@ class EC2SpotDocker(DockerMode):
         if self.checkpoint and self.checkpoint.restore:
             raise NotImplementedError()
         else:
-            docker_cmd = self.get_docker_cmd(main_cmd, use_tty=False, extra_args=mnt_args, pythonpath=py_path, use_docker_generated_name=True)
+            docker_cmd = self.get_docker_cmd(
+                main_cmd,
+                use_tty=False,
+                extra_args=mnt_args,
+                pythonpath=py_path,
+                use_docker_generated_name=True,
+                interactive_docker=True,
+            )
         assert num_exps > 0
         for _ in range(num_exps - 1):
             sio.write(docker_cmd+' &\n')
