@@ -864,11 +864,10 @@ class LocalSingularity(SingularityMode):
                       skip_wait=self.skip_wait)
 
 
-class SlurmSingularity(LocalSingularity):
+class SlurmSingularity(SingularityMode):
     # TODO: set up an auto-config
     def __init__(
         self, image, account_name, partition, time_in_mins,
-        qos=None,
         nodes=1,
         n_tasks=1,
         n_gpus=1,
@@ -899,11 +898,12 @@ class SlurmSingularity(LocalSingularity):
             verbose=verbose,
             extra_args=self.extra_args,
         )
+        wrapped_singularity_cmd = singularity_cmd.replace("'", "\\'")
         if self.gpu:
             full_cmd = (
                 "sbatch -A {account_name} -p {partition} -t {time}"
                 " -N {nodes} -n {n_tasks} --cpus-per-task={cpus_per_task}"
-                " --gres=gpu:{n_gpus} {cmd}".format(
+                " --gres=gpu:{n_gpus} --wrap=$'{cmd}'".format(
                     account_name=self.account_name,
                     partition=self.partition,
                     time=self.time_in_mins,
@@ -911,15 +911,18 @@ class SlurmSingularity(LocalSingularity):
                     n_tasks=self.n_tasks,
                     cpus_per_task=2*self.n_gpus,
                     n_gpus=self.n_gpus,
-                    cmd=singularity_cmd,
+                    cmd=wrapped_singularity_cmd,
                 )
             )
         else:
-            full_cmd = "sbatch -A {account_name} -p {partition} -t {time} {cmd}".format(
-                account_name=self.account_name,
-                partition=self.partition,
-                time=self.time_in_mins,
-                cmd=singularity_cmd,
+            full_cmd = (
+                "sbatch -A {account_name} -p {partition} -t {time}"
+                " --wrap=$'{cmd}'".format(
+                    account_name=self.account_name,
+                    partition=self.partition,
+                    time=self.time_in_mins,
+                    cmd=wrapped_singularity_cmd,
+                )
             )
         if verbose:
             print(full_cmd)
