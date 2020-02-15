@@ -36,7 +36,7 @@ class Mount(object):
 
 class MountLocal(Mount):
     def __init__(self, local_dir, mount_point=None, cleanup=True,
-                filter_ext=('.pyc', '.log', '.git', '.mp4'),
+                filter_ext=('.pyc', '.log', '.git', '.mp4', '.idea'),
                 filter_dir=('data',),
                 **kwargs):
         super(MountLocal, self).__init__(mount_point=mount_point, **kwargs)
@@ -88,6 +88,24 @@ class MountGitRepo(Mount):
         self.git_credentials = git_credentials
         raise NotImplementedError()
 
+
+class MountGCP(Mount):
+    def __init__(self, gcp_path, gcp_bucket_name, sync_interval=15, output=False,
+            include_types=('*.txt', '*.csv', '*.json', '*.gz', '*.tar', '*.log', '*.pkl'), **kwargs):
+        super(MountGCP, self).__init__(**kwargs)
+        self.gcp_bucket_name = gcp_bucket_name
+        self.gcp_path = gcp_path
+        self.output = output
+        self.sync_interval = sync_interval
+        self.sync_on_terminate = True
+        self.include_types = include_types
+
+    def __str__(self):
+        return 'MountGCP@gcp://%s/%s'% (self.gcp_bucket_name, self.gcp_path)
+
+    @property
+    def include_string(self):
+        return ' '.join(['--include \'%s\''%type_ for type_ in self.include_types])
 
 class MountS3(Mount):
     def __init__(self, s3_path, s3_bucket=None, sync_interval=15, output=False,

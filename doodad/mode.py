@@ -5,16 +5,18 @@ import tempfile
 import uuid
 import time
 import base64
+import json
 
 try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
 
-from .mount import MountLocal, MountS3
-from .utils import hash_file, call_and_wait, CommandBuilder
+from .mount import MountLocal, MountS3, MountGCP
+from .utils import hash_file, call_and_wait, CommandBuilder, REPO_DIR
 from .ec2.aws_util import s3_upload, s3_exists
-
+from .gcp.gcp_util import GCP_STARTUP_SCRIPT_PATH, GCP_SHUTDOWN_SCRIPT_PATH, \
+        upload_file_to_gcp_storage, get_machine_type, get_gpu_type
 
 class LaunchMode(object):
     def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
@@ -22,12 +24,12 @@ class LaunchMode(object):
 
 
 class Local(LaunchMode):
-    def __init__(self):
+    def __init__(self, skip_wait=False):
         super(Local, self).__init__()
         self.env = {}
+        self.skip_wait = skip_wait
 
-    def launch_command(self, cmd, mount_points=None, dry=False,
-                       verbose=False, skip_wait=False):
+    def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
         if dry:
             print(cmd); return
 
@@ -63,7 +65,8 @@ class Local(LaunchMode):
         commands.extend(cleanup_commands)
 
         # Call everything
-        commands.call_and_wait(verbose=verbose, dry=dry, skip_wait=skip_wait)
+        commands.call_and_wait(verbose=verbose, dry=dry,
+                               skip_wait=self.skip_wait)
 
 LOCAL = Local()
 
@@ -83,7 +86,7 @@ class DockerMode(LaunchMode):
 
         if verbose:
             if self.gpu:
-                cmd_list.append('echo \"Running in docker (gpu)\"')
+                cmd_list.append('echo \"Running in docker with gpu\"')
             else:
                 cmd_list.append('echo \"Running in docker\"')
         if pythonpath:
@@ -121,12 +124,12 @@ class DockerMode(LaunchMode):
 
 
 class LocalDocker(DockerMode):
-    def __init__(self, checkpoints=None, **kwargs):
+    def __init__(self, checkpoints=None, skip_wait=False, **kwargs):
         super(LocalDocker, self).__init__(**kwargs)
         self.checkpoints = checkpoints
+        self.skip_wait = skip_wait
 
-    def launch_command(self, cmd, mount_points=None, dry=False,
-                       verbose=False, skip_wait=False):
+    def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
         mnt_args = ''
         py_path = []
         for mount in mount_points:
@@ -142,17 +145,20 @@ class LocalDocker(DockerMode):
 
         full_cmd = self.get_docker_cmd(cmd, extra_args=mnt_args, pythonpath=py_path,
                 checkpoint=self.checkpoints)
-        call_and_wait(full_cmd, verbose=verbose, dry=dry, skip_wait=skip_wait)
+        call_and_wait(full_cmd, verbose=verbose, dry=dry,
+                      skip_wait=self.skip_wait)
 
 
 class SSHDocker(DockerMode):
     TMP_DIR = '~/.remote_tmp'
 
-    def __init__(self, credentials=None, **docker_args):
+    def __init__(self, credentials=None, tmp_dir=None, **docker_args):
+        if tmp_dir is None:
+            tmp_dir = SSHDocker.TMP_DIR
         super(SSHDocker, self).__init__(**docker_args)
         self.credentials = credentials
         self.run_id = 'run_%s' % uuid.uuid4()
-        self.tmp_dir = os.path.join(SSHDocker.TMP_DIR, self.run_id)
+        self.tmp_dir = os.path.join(tmp_dir, self.run_id)
         self.checkpoint = None
 
     def launch_command(self, main_cmd, mount_points=None, dry=False, verbose=False):
@@ -234,8 +240,10 @@ class EC2SpotDocker(DockerMode):
             security_groups=None,
             aws_s3_path=None,
             extra_ec2_instance_kwargs=None,
+            num_exps=1,
+            swap_size=4096,
             **kwargs
-            ):
+        ):
         super(EC2SpotDocker, self).__init__(**kwargs)
         if security_group_ids is None:
             security_group_ids = []
@@ -256,6 +264,8 @@ class EC2SpotDocker(DockerMode):
         self.security_groups = security_groups
         self.iam_instance_profile_name = iam_instance_profile_name
         self.extra_ec2_instance_kwargs = extra_ec2_instance_kwargs
+        self.num_exps = num_exps
+        self.swap_size = swap_size
         self.checkpoint = None
 
         self.s3_mount_path = 's3://%s/doodad/mount' % self.s3_bucket
@@ -285,7 +295,7 @@ class EC2SpotDocker(DockerMode):
     def make_timekey(self):
         return '%d'%(int(time.time()*1000))
 
-    def launch_command(self, main_cmd, mount_points=None, dry=False, verbose=False, num_exps=1, swap_size=4096):
+    def launch_command(self, main_cmd, mount_points=None, dry=False, verbose=False):
         default_config = dict(
             image_id=self.image_id,
             instance_type=self.instance_type,
@@ -303,6 +313,7 @@ class EC2SpotDocker(DockerMode):
             exp_name = self.s3_log_name
         exp_prefix = self.s3_log_prefix
         s3_base_dir = os.path.join(self.aws_s3_path, exp_prefix.replace("_", "-"), exp_name)
+        stdout_log_s3_path = os.path.join(s3_base_dir, 'stdout_$EC2_INSTANCE_ID.log')
 
         sio = StringIO()
         sio.write("#!/bin/bash\n")
@@ -324,7 +335,7 @@ class EC2SpotDocker(DockerMode):
             swap_location = '/var/swap.1'
         sio.write(
             'sudo dd if=/dev/zero of={swap_location} bs=1M count={swap_size}\n'
-            .format(swap_location=swap_location, swap_size=swap_size))
+            .format(swap_location=swap_location, swap_size=self.swap_size))
         sio.write('sudo mkswap {swap_location}\n'.format(swap_location=swap_location))
         sio.write('sudo chmod 600 {swap_location}\n'.format(swap_location=swap_location))
         sio.write('sudo swapon {swap_location}\n'.format(swap_location=swap_location))
@@ -380,6 +391,8 @@ class EC2SpotDocker(DockerMode):
                 #               spot instance
                 ec2_local_dir = mount.mount_point
                 s3_path = os.path.join(s3_base_dir, mount.s3_path)
+                if self.num_exps == 1:
+                    stdout_log_s3_path = os.path.join(s3_path, 'stdout_$EC2_INSTANCE_ID.log')
                 if not mount.output:
                     raise NotImplementedError()
                 local_output_dir_and_s3_path.append(
@@ -416,6 +429,7 @@ class EC2SpotDocker(DockerMode):
                         then
                             logger "Running shutdown hook."
                             aws s3 cp --recursive {log_dir} {s3_path}
+                            aws s3 cp /home/ubuntu/user_data.log {stdout_log_s3_path}
                             break
                         else
                             # Spot instance not yet marked for termination.
@@ -428,10 +442,20 @@ class EC2SpotDocker(DockerMode):
                 """.format(
                     log_dir=ec2_local_dir,
                     s3_path=s3_path,
+                    stdout_log_s3_path=stdout_log_s3_path,
                 ))
             else:
                 raise NotImplementedError()
 
+        sio.write("""
+        while /bin/true; do
+            aws s3 cp /home/ubuntu/user_data.log {stdout_log_s3_path}
+            sleep {periodic_sync_interval}
+        done & echo sync initiated
+        """.format(
+            stdout_log_s3_path=stdout_log_s3_path,
+            periodic_sync_interval=max_sync_interval
+        ))
 
         if self.gpu:
             #sio.write('echo "LSMOD NVIDIA:"\n')
@@ -459,8 +483,8 @@ class EC2SpotDocker(DockerMode):
             raise NotImplementedError()
         else:
             docker_cmd = self.get_docker_cmd(main_cmd, use_tty=False, extra_args=mnt_args, pythonpath=py_path, use_docker_generated_name=True)
-        assert num_exps > 0
-        for _ in range(num_exps - 1):
+        assert self.num_exps > 0
+        for _ in range(self.num_exps - 1):
             sio.write(docker_cmd+' &\n')
         sio.write(docker_cmd+'\n')
 
@@ -473,15 +497,9 @@ class EC2SpotDocker(DockerMode):
                 local_dir=local_output_dir,
                 s3_dir=s3_dir_path
             ))
-        if num_exps == 1:
-            sio.write("aws s3 cp /home/ubuntu/user_data.log {s3_path}\n".format(
-                s3_path=os.path.join(s3_base_dir, 'stdout.log'),
-            ))
-        else:
-            sio.write("aws s3 cp /home/ubuntu/user_data.log {s3_path}\n".format(
-                s3_path=os.path.join(s3_base_dir,
-                                     'stdout_$EC2_INSTANCE_ID.log'),
-            ))
+        sio.write("aws s3 cp /home/ubuntu/user_data.log {}\n".format(
+            stdout_log_s3_path,
+        ))
 
         # Wait for last sync
         if max_sync_interval > 0:
@@ -609,6 +627,174 @@ class EC2AutoconfigDocker(EC2SpotDocker):
                 )
 
 
+class GCPDocker(DockerMode):
+    def __init__(
+        self,
+        zone="us-east4-a",
+        gcp_bucket_name=None,
+        instance_type='n1-standard-4',
+        image_name=None,
+        image_project=None,
+        disk_size:"Gb"=64,
+        num_exps=1,
+        terminate=True,
+        preemptible=True,
+        gcp_log_prefix='experiment',
+        gcp_log_name=None,
+        gcp_log_path=None,
+        gpu_kwargs=None,
+        **kwargs
+    ):
+        super(GCPDocker, self).__init__(**kwargs)
+        assert 'CLOUDSDK_CORE_PROJECT' in os.environ.keys()
+        self.project = os.environ['CLOUDSDK_CORE_PROJECT']
+        self.zone = zone
+        self.gcp_bucket_name = gcp_bucket_name
+        self.instance_type = instance_type
+        self.terminate = terminate
+        self.disk_size = disk_size
+        self.image_project = image_project
+        self.image_name = image_name
+        self.preemptible = preemptible
+        self.num_exps = num_exps
+
+        self.gcp_log_prefix = gcp_log_prefix
+        self.gcp_log_name = gcp_log_name
+        self.gcp_log_path = gcp_log_path or 'doodad/logs'
+        if self.gpu:
+            self.num_gpu = gpu_kwargs['num_gpu']
+            self.gpu_model = gpu_kwargs['gpu_model']
+            self.gpu_type = get_gpu_type(self.project, self.zone, self.gpu_model)
+
+        import googleapiclient.discovery
+        self.compute = googleapiclient.discovery.build('compute', 'v1')
+
+    def launch_command(self, main_cmd, mount_points=None, dry=False, verbose=False):
+        if self.gcp_log_name is None:
+            exp_name = "{}-{}".format(self.gcp_log_prefix, EC2SpotDocker.make_timekey(self))
+        else:
+            exp_name = self.gcp_log_name
+        exp_prefix = self.gcp_log_prefix
+        gcp_base_dir = os.path.join(self.gcp_log_path, exp_prefix.replace("_", "-"), exp_name)
+
+        mnt_args = ''
+        py_path = []
+        gcp_mount_info = []
+        max_sync_interval = 0
+        local_mounts = []
+        for mount in mount_points:
+            print('Handling mount: ', mount)
+            if isinstance(mount, MountLocal):  # TODO: these should be mount_s3 objects
+                if mount.read_only:
+                    if mount.path_on_remote is None:
+                        with mount.gzip() as gzip_file:
+                            gzip_path = os.path.realpath(gzip_file)
+                            file_hash = hash_file(gzip_path)
+                            gcp_path = upload_file_to_gcp_storage(
+                                bucket_name=self.gcp_bucket_name,
+                                file_name=gzip_path,
+                                remote_filename=file_hash+'.tar'
+                            )
+                        mount.path_on_remote = gcp_path
+                        mount.local_file_hash = file_hash
+                    else:
+                        file_hash = mount.local_file_hash
+                        gcp_path = mount.path_on_remote
+                    remote_unpack_name = '/tmp/'+file_hash
+                    mount_point =  os.path.join('/mounts', mount.mount_point.replace('~/',''))
+                    mnt_args += ' -v %s:%s' % (os.path.join(remote_unpack_name, os.path.basename(mount.local_dir)), mount_point)
+                    if mount.pythonpath:
+                        py_path.append(mount_point)
+                    local_mounts.append(file_hash)
+                else:
+                    raise ValueError()
+            elif isinstance(mount, MountGCP):
+                gcp_local_dir = mount.mount_point
+                gcp_path = os.path.join(gcp_base_dir, mount.gcp_path)
+                if not mount.output:
+                    raise NotImplementedError()
+                gcp_mount_info.append(
+                    (gcp_local_dir, gcp_path, mount.include_string, mount.sync_interval)
+                )
+                mnt_args += ' -v %s:%s' % (gcp_local_dir, mount.mount_point)
+            else:
+                raise NotImplementedError()
+
+        docker_cmd = self.get_docker_cmd(main_cmd, use_tty=False, extra_args=mnt_args, pythonpath=py_path, use_docker_generated_name=True)
+
+        metadata = {
+            'bucket_name': self.gcp_bucket_name,
+            'docker_cmd': docker_cmd,
+            'docker_image': self.docker_image,
+            'local_mounts': json.dumps(local_mounts),
+            'gcp_mounts': json.dumps(gcp_mount_info),
+            'use_gpu': json.dumps(self.gpu),
+            'num_exps': self.num_exps,
+            'terminate': json.dumps(self.terminate),
+            'startup-script': open(GCP_STARTUP_SCRIPT_PATH, "r").read(),
+            'shutdown-script': open(GCP_SHUTDOWN_SCRIPT_PATH, "r").read(),
+        }
+        # instance name must match regex '(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)'">
+        unique_name= "doodad" + str(uuid.uuid4()).replace("-", "")
+        self.create_instance(metadata, unique_name, exp_name, exp_prefix)
+        if verbose:
+            print(unique_name)
+            print(metadata)
+
+    def create_instance(self, metadata, name, exp_name="", exp_prefix=""):
+        image_response = self.compute.images().get(
+            project=self.image_project,
+            image=self.image_name,
+        ).execute()
+        source_disk_image = image_response['selfLink']
+        config = {
+            'name': name,
+            'machineType': get_machine_type(self.zone, self.instance_type),
+            'disks': [{
+                    'boot': True,
+                    'autoDelete': True,
+                    'initializeParams': {
+                        'sourceImage': source_disk_image,
+                        'diskSizeGb': self.disk_size,
+                    }
+            }],
+            'networkInterfaces': [{
+                'network': 'global/networks/default',
+                'accessConfigs': [
+                    {'type': 'ONE_TO_ONE_NAT', 'name': 'External NAT'}
+                ]
+            }],
+            'serviceAccounts': [{
+                'email': 'default',
+                'scopes': ['https://www.googleapis.com/auth/cloud-platform']
+            }],
+            'metadata': {
+                'items': [
+                    {'key': key, 'value': value}
+                    for key, value in metadata.items()
+                ]
+            },
+            'scheduling': {
+                "onHostMaintenance": "terminate",
+                "automaticRestart": False,
+                "preemptible": self.preemptible,
+            },
+            "labels": {
+                "exp_name": exp_name,
+                "exp_prefix": exp_prefix,
+            }
+        }
+        if self.gpu:
+            config["guestAccelerators"] = [{
+                      "acceleratorType": self.gpu_type,
+                      "acceleratorCount": self.num_gpu,
+            }]
+        return self.compute.instances().insert(
+            project=self.project,
+            zone=self.zone,
+            body=config
+        ).execute()
+
 class CodalabDocker(DockerMode):
     def __init__(self):
         super(CodalabDocker, self).__init__()
@@ -616,10 +802,14 @@ class CodalabDocker(DockerMode):
 
 
 class SingularityMode(LaunchMode):
-    def __init__(self, image, gpu=False):
+    def __init__(self, image, gpu=False, pre_cmd=None,
+                 post_cmd=None, skip_wait=False):
         super(SingularityMode, self).__init__()
         self.singularity_image = image
         self.gpu = gpu
+        self.skip_wait = skip_wait
+        self.pre_cmd = pre_cmd
+        self.post_cmd = post_cmd
 
     def get_singularity_cmd(
             self,
@@ -627,12 +817,10 @@ class SingularityMode(LaunchMode):
             extra_args='',
             verbose=True,
             pythonpath=None,
-            pre_cmd=None,
-            post_cmd=None,
         ):
         cmd_list= CommandBuilder()
-        if pre_cmd:
-            cmd_list.extend(pre_cmd)
+        if self.pre_cmd:
+            cmd_list.extend(self.pre_cmd)
 
         if verbose:
             if self.gpu:
@@ -643,8 +831,8 @@ class SingularityMode(LaunchMode):
             cmd_list.append('export PYTHONPATH=$PYTHONPATH:%s' % (':'.join(pythonpath)))
 
         cmd_list.append(main_cmd)
-        if post_cmd:
-            cmd_list.extend(post_cmd)
+        if self.post_cmd:
+            cmd_list.extend(self.post_cmd)
 
         if self.gpu:
             extra_args += ' --nv '
@@ -658,9 +846,7 @@ class SingularityMode(LaunchMode):
 
 
 class LocalSingularity(SingularityMode):
-    def launch_command(self, cmd, mount_points=None, dry=False,
-                       verbose=False, pre_cmd=None, post_cmd=None,
-                       skip_wait=False):
+    def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
         py_path = []
         for mount in mount_points:
             if isinstance(mount, MountLocal):
@@ -672,11 +858,10 @@ class LocalSingularity(SingularityMode):
         full_cmd = self.get_singularity_cmd(
             cmd,
             pythonpath=py_path,
-            pre_cmd=pre_cmd,
-            post_cmd=post_cmd,
             verbose=verbose,
         )
-        call_and_wait(full_cmd, verbose=verbose, dry=dry, skip_wait=skip_wait)
+        call_and_wait(full_cmd, verbose=verbose, dry=dry,
+                      skip_wait=self.skip_wait)
 
 
 class SlurmSingularity(LocalSingularity):
@@ -687,6 +872,7 @@ class SlurmSingularity(LocalSingularity):
         nodes=1,
         n_tasks=1,
         n_gpus=1,
+        extra_args='',
         **kwargs
     ):
         super(SlurmSingularity, self).__init__(image, **kwargs)
@@ -696,11 +882,9 @@ class SlurmSingularity(LocalSingularity):
         self.nodes = nodes
         self.n_tasks = n_tasks
         self.n_gpus = n_gpus
+        self.extra_args = extra_args
 
-    def create_slurm_command(self, cmd, mount_points=None,
-                             verbose=False, pre_cmd=None, post_cmd=None):
-        if pre_cmd is None:
-            pre_cmd = []
+    def create_slurm_command(self, cmd, mount_points=None, verbose=False):
         py_path = []
         for mount in mount_points:
             if isinstance(mount, MountLocal):
@@ -712,9 +896,8 @@ class SlurmSingularity(LocalSingularity):
         singularity_cmd = self.get_singularity_cmd(
             cmd,
             pythonpath=py_path,
-            pre_cmd=pre_cmd,
-            post_cmd=post_cmd,
             verbose=verbose,
+            extra_args=self.extra_args,
         )
         if self.gpu:
             full_cmd = (
@@ -742,9 +925,11 @@ class SlurmSingularity(LocalSingularity):
             print(full_cmd)
         return full_cmd
 
-    def launch_command(self, cmd, dry=False, **kwargs):
-        full_cmd = self.create_slurm_command(cmd, **kwargs)
-        call_and_wait(full_cmd, dry=dry)
+    def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
+        full_cmd = self.create_slurm_command(
+            cmd, mount_points=mount_points, verbose=verbose,
+        )
+        call_and_wait(full_cmd, dry=dry, skip_wait=self.skip_wait)
 
 
 class ScriptSlurmSingularity(SlurmSingularity):
@@ -753,12 +938,24 @@ class ScriptSlurmSingularity(SlurmSingularity):
     """
     TMP_FILE = '/tmp/script_to_scp_over.sh'
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_first_time = False
+
+    def set_first_time(self, is_first_time):
+        self.is_first_time = is_first_time
+
     def launch_command(
-            self, cmd, first_launch_command=False,
-            dry=False, **kwargs
+            self,
+            cmd,
+            dry=False,
+            mount_points=None,
+            verbose=False,
     ):
-        full_cmd = self.create_slurm_command(cmd, **kwargs)
-        if first_launch_command:
+        full_cmd = self.create_slurm_command(
+            cmd, mount_points=mount_points, verbose=verbose,
+        )
+        if self.is_first_time:
             with open(self.TMP_FILE, "w") as myfile:
                 myfile.write(full_cmd + '\n')
             # make file executable
