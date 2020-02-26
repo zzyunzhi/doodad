@@ -803,13 +803,14 @@ class CodalabDocker(DockerMode):
 
 class SingularityMode(LaunchMode):
     def __init__(self, image, gpu=False, pre_cmd=None,
-                 post_cmd=None, skip_wait=False):
+                 post_cmd=None, skip_wait=False, default_extra_args=''):
         super(SingularityMode, self).__init__()
         self.singularity_image = image
         self.gpu = gpu
         self.skip_wait = skip_wait
         self.pre_cmd = pre_cmd
         self.post_cmd = post_cmd
+        self._default_extra_args = default_extra_args
 
     def get_singularity_cmd(
             self,
@@ -817,7 +818,8 @@ class SingularityMode(LaunchMode):
             extra_args='',
             verbose=True,
             pythonpath=None,
-        ):
+    ):
+        extra_args = self._default_extra_args + extra_args
         cmd_list= CommandBuilder()
         if self.pre_cmd:
             cmd_list.extend(self.pre_cmd)
