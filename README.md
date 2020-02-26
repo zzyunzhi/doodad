@@ -39,6 +39,12 @@ See [ec2_launch_test.py](https://github.com/justinjfu/doodad/blob/master/example
 
 See the [wiki](https://github.com/justinjfu/doodad/wiki/Home)
 
+## Changelog
+
+26 February 2020
+ - Refactor slurm-based modes.
+ - Add support for Berkeley Research Compute's high-throughput node.
+
 ## TODOs
 - Add support for automatic experiment restarting (will require the user to write a save_state and restore_state function, or use something like CRIU)
 - Fix output directories when using docker showing up as root permissions.

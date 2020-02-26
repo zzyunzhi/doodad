@@ -1,5 +1,6 @@
 import hashlib
 import os
+import stat
 import subprocess
 import contextlib
 import tempfile
@@ -9,6 +10,7 @@ REPO_DIR = os.path.dirname(THIS_FILE_DIR)
 EXAMPLES_DIR = os.path.join(REPO_DIR, 'examples')
 
 HASH_BUF_SIZE = 65536
+
 
 def hash_file(filename):
     hasher = hashlib.md5()
@@ -38,6 +40,32 @@ def call_and_wait(cmd, verbose=False, dry=False, skip_wait=False):
             print("os error!")
             pass
         p.wait()
+
+
+WRITTEN_TO = set()
+
+
+def add_to_script(
+        cmd,
+        verbose=True,
+        path='/tmp/doodad_generated_script.sh',
+        overwrite=False,
+):
+    global WRITTEN_TO
+    if path not in WRITTEN_TO or overwrite:
+        WRITTEN_TO.add(path)
+        with open(path, "w") as myfile:
+            myfile.write(cmd + '\n')
+        # make file executable
+        st = os.stat(path)
+        os.chmod(path, st.st_mode | stat.S_IEXEC)
+        if verbose:
+            print("Script generated:", path)
+    else:
+        with open(path, "a") as myfile:
+            myfile.write(cmd + '\n')
+        if verbose:
+            print("Script updated. scp this script over:", path)
 
 
 class CommandBuilder(object):
@@ -86,4 +114,3 @@ class CommandBuilder(object):
                 f.write(cmd+'\n')
             f.seek(0)
             yield f.name
-
