@@ -6,6 +6,9 @@ import time
 import base64
 import json
 
+from doodad.slurm.slurm_util import SlurmConfig
+
+
 try:
     from StringIO import StringIO
 except ImportError:
@@ -952,12 +955,16 @@ class BrcHighThroughputMode(SingularityMode):
             self,
             slurm_config,
             taskfile_path_on_brc,
+            n_tasks_total,
+            overwrite_task_script=False,
             *args,
             **kwargs
     ):
         super(BrcHighThroughputMode, self).__init__(*args, **kwargs)
+        self._overwrite_task_script = overwrite_task_script
         self._taskfile_path_on_brc = taskfile_path_on_brc
         self._slurm_config = slurm_config
+        self._n_tasks_total = n_tasks_total
 
     def launch_command(
             self,
@@ -967,8 +974,12 @@ class BrcHighThroughputMode(SingularityMode):
             verbose=False,
     ):
         full_cmd = self.create_singularity_cmd(cmd, mount_points=mount_points)
-        self._slurm_config.add_job()
-        utils.add_to_script(full_cmd, path=self.TASK_FILE, verbose=True)
+        utils.add_to_script(
+            full_cmd,
+            path=self.TASK_FILE,
+            verbose=True,
+            overwrite=self._overwrite_task_script,
+        )
 
         cmd_list = utils.CommandBuilder()
         cmd_list.append('module load gcc openmpi')
@@ -977,6 +988,7 @@ class BrcHighThroughputMode(SingularityMode):
         sbatch_cmd = slurm_util.wrap_command_with_sbatch(
             cmd_list.to_string(),
             self._slurm_config,
+            self._n_tasks_total,
         )
         utils.add_to_script(
             sbatch_cmd,
@@ -985,16 +997,13 @@ class BrcHighThroughputMode(SingularityMode):
             overwrite=True,
         )
 
-    def generate_launch_script(self, foo):
-        pass
-
 
 class SlurmSingularity(SingularityMode):
     # TODO: set up an auto-config
     def __init__(
             self,
             image,
-            slurm_config,
+            slurm_config: SlurmConfig,
             skip_wait=False,
             **kwargs
     ):
@@ -1015,10 +1024,10 @@ class SlurmSingularity(SingularityMode):
             cmd,
             mount_points=mount_points,
         )
-        self._slurm_config.add_job()
         full_cmd = slurm_util.wrap_command_with_sbatch(
             singularity_cmd,
             self._slurm_config,
+            n_tasks=1,
         )
         return full_cmd
 
@@ -1029,6 +1038,16 @@ class ScriptSlurmSingularity(SlurmSingularity):
     """
     TMP_FILE = '/tmp/script_to_scp_over.sh'
 
+    def __init__(
+            self,
+            image,
+            slurm_config,
+            overwrite_script=False,
+            **kwargs
+    ):
+        super().__init__(image, slurm_config, **kwargs)
+        self._overwrite_script = overwrite_script
+
     def launch_command(
             self,
             cmd,
@@ -1038,4 +1057,9 @@ class ScriptSlurmSingularity(SlurmSingularity):
     ):
         full_cmd = self.create_slurm_command(cmd, mount_points=mount_points)
         # full_cmd = self.create_singularity_cmd(cmd, mount_points=mount_points)
-        utils.add_to_script(full_cmd, path=self.TMP_FILE, verbose=True)
+        utils.add_to_script(
+            full_cmd,
+            path=self.TMP_FILE,
+            verbose=True,
+            overwrite=self._overwrite_script,
+        )

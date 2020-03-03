@@ -19,25 +19,24 @@ class SlurmConfig(object):
             max_num_cores_per_node,
             n_gpus=0,
             n_cpus_per_task=1,
+            n_nodes=None,
     ):
         if n_gpus > 0 and n_cpus_per_task < 2:
             raise ValueError("Must have at least 2 cpus per GPU task")
         self.account_name = account_name
         self.partition = partition
         self.time_in_mins = time_in_mins
-        self.n_nodes = 0
-        self.n_tasks = 0
+        self.n_nodes = n_nodes
         self.n_gpus = n_gpus
         self.n_cpus_per_task = n_cpus_per_task
-        self._max_num_cores_per_node = max_num_cores_per_node
-
-    def add_job(self):
-        self.n_tasks += 1
-        num_cpus = self.n_tasks * self.n_cpus_per_task
-        self.n_nodes = math.ceil(num_cpus / self._max_num_cores_per_node)
+        self.max_num_cores_per_node = max_num_cores_per_node
 
 
-def wrap_command_with_sbatch(cmd, slurm_config):
+def wrap_command_with_sbatch(
+        cmd: str,
+        config: SlurmConfig,
+        n_tasks: int,
+):
     """
     Wrap a command around a call to sbatch
 
@@ -48,19 +47,22 @@ def wrap_command_with_sbatch(cmd, slurm_config):
     sbatch_cmd = wrap_command_with_sbatch(cmd, config)
     """
     cmd = cmd.replace("'", "\\'")
-    if slurm_config.n_gpus > 0:
+    num_cpus = n_tasks * config.n_cpus_per_task
+    n_nodes = config.n_nodes or math.ceil(
+        num_cpus / config.max_num_cores_per_node)
+    if config.n_gpus > 0:
         full_cmd = (
             "sbatch -A {account_name} -p {partition} -t {time}"
             " -N {nodes} -n {n_tasks} --cpus-per-task={cpus_per_task}"
             " --gres=gpu:{n_gpus} --wrap=$'{cmd}'".format(
-                account_name=slurm_config.account_name,
-                partition=slurm_config.partition,
-                time=slurm_config.time_in_mins,
-                nodes=slurm_config.n_nodes,
-                n_tasks=slurm_config.n_tasks,
-                cpus_per_task=slurm_config.n_cpus_per_task,
-                n_gpus=slurm_config.n_gpus,
+                account_name=config.account_name,
+                partition=config.partition,
+                time=config.time_in_mins,
+                nodes=n_nodes,
+                n_tasks=n_tasks,
+                cpus_per_task=config.n_cpus_per_task,
                 cmd=cmd,
+                n_gpus=config.n_gpus,
             )
         )
     else:
@@ -68,12 +70,12 @@ def wrap_command_with_sbatch(cmd, slurm_config):
             "sbatch -A {account_name} -p {partition} -t {time}"
             " -N {nodes} -n {n_tasks} --cpus-per-task={cpus_per_task}"
             " --wrap=$'{cmd}'".format(
-                account_name=slurm_config.account_name,
-                partition=slurm_config.partition,
-                time=slurm_config.time_in_mins,
-                nodes=slurm_config.n_nodes,
-                cpus_per_task=slurm_config.n_cpus_per_task,
-                n_tasks=slurm_config.n_tasks,
+                account_name=config.account_name,
+                partition=config.partition,
+                time=config.time_in_mins,
+                nodes=n_nodes,
+                n_tasks=n_tasks,
+                cpus_per_task=config.n_cpus_per_task,
                 cmd=cmd,
             )
         )
