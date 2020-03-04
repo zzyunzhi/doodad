@@ -41,7 +41,11 @@ See the [wiki](https://github.com/justinjfu/doodad/wiki/Home)
 
 ## Changelog
 
-26 February 2020
+04 March 2020 (v0.2.3)
+ - SlurmConfig is only responsible for config.
+ - Require user to explicitly specify whether or not they want to overwrite generated script in `ScriptSlurmSingularity` and `BrcHighThroughputMode`
+
+26 February 2020 (v0.2.2)
  - Refactor slurm-based modes.
  - Add support for Berkeley Research Compute's high-throughput node.
 
