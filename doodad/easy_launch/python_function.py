@@ -167,7 +167,7 @@ def run_experiment(
         ),
     )
     if mode == 'here_no_doodad':
-        method_call(doodad_config, variant)
+        return method_call(doodad_config, variant)
 
     """
     Safety Checks
