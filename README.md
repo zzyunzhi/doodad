@@ -40,6 +40,8 @@ See [ec2_launch_test.py](https://github.com/justinjfu/doodad/blob/master/example
 See the [wiki](https://github.com/justinjfu/doodad/wiki/Home)
 
 ## Changelog
+17 March 2020 (v0.2.4)
+ - Add `doodad.easy_launch` to make it very easy to run python functions across different modes supported by `doodad`.
 
 04 March 2020 (v0.2.3)
  - SlurmConfig is only responsible for config.
@@ -52,3 +54,27 @@ See the [wiki](https://github.com/justinjfu/doodad/wiki/Home)
 ## TODOs
 - Add support for automatic experiment restarting (will require the user to write a save_state and restore_state function, or use something like CRIU)
 - Fix output directories when using docker showing up as root permissions.
+
+# `doodad.easy_launch`
+The directory `doodad.easy_launch` is intended to make it very easy to launch experiments. Usage:
+
+```python
+from doodad.easy_launch.python_function import run_experiment
+
+
+def function(doodad_config, variant):
+    # Do something with `variant`
+
+if __name__ == "__main__":
+    variant = dict(
+        learning_rate=1e-4,
+        parameter='awesome',
+    )
+    run_experiment(
+        function,
+        exp_name='ec2-test-doodad-easy-launch',
+        mode='ec2',
+        variant=variant,
+    )
+
+```
