@@ -51,9 +51,7 @@ def add_to_script(
         path='/tmp/doodad_generated_script.sh',
         overwrite=False,
 ):
-    global WRITTEN_TO
-    if path not in WRITTEN_TO or overwrite:
-        WRITTEN_TO.add(path)
+    if overwrite:
         with open(path, "w") as myfile:
             myfile.write(cmd + '\n')
         # make file executable
