@@ -78,3 +78,8 @@ if __name__ == "__main__":
     )
 
 ```
+
+To use it you well need to create a private version of the configuration file:
+```bash
+cp doodad/easy_launch/config.py doodad/easy_launch/config_private.py
+```

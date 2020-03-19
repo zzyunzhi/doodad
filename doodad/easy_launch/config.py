@@ -118,5 +118,15 @@ GCP_FILE_TYPES_TO_SAVE = (
 )
 
 # Overwrite with private configurations
-from doodad.easy_launch.config_private import *
-
+try:
+    from doodad.easy_launch.config_private import *
+except ImportError as e:
+    from doodad.utils import REPO_DIR
+    import os.path as osp
+    command_to_run = "cp {} {}".format(
+        __file__,
+        __file__[:-3] + '_private.py',
+        )
+    print("You should set up the private config files. Run:\n\n  {}\n".format(
+        command_to_run
+    ))
