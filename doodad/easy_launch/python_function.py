@@ -1,3 +1,4 @@
+import copy
 import os
 import os.path as osp
 import sys
@@ -96,7 +97,7 @@ def run_experiment(
     def foo(doodad_config, variant):
         x = variant['x']
         y = variant['y']
-        logger.log("sum", x+y)
+        print("sum", x+y)
 
     variant = {
         'x': 4,
@@ -121,7 +122,6 @@ def run_experiment(
      - 'slurm_singularity': submit a slurm job using singularity
      - 'sss': generate a script to run on some slurm job using singularity
     :param exp_name: name of experiment
-    :param seed: Seed for this specific trial.
     :param variant: Dictionary
     :param prepend_date_to_exp_name: If False, do not prepend the date to
     the experiment directory.
@@ -432,7 +432,7 @@ def sanitize_variant(variant):
                 "Variants should not have periods in keys. Did you mean to "
                 "convert {} into a nested dictionary?".format(key)
             )
-    return variant
+    return copy.deepcopy(variant)
 
 
 def generate_git_infos():
