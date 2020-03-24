@@ -151,7 +151,7 @@ def run_experiment(
     base_log_dir = sanitize_base_log_dir(base_log_dir, mode)
     base_exp_name = exp_name
     if prepend_date_to_exp_name:
-        exp_name = time.strftime("%y%m%d") + "-" + exp_name
+        exp_name = time.strftime("%y-%m-%d") + "-" + exp_name
     git_infos = generate_git_infos()
 
     doodad_config = DoodadConfig(
