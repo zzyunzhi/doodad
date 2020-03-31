@@ -10,7 +10,7 @@ if __name__ == "__main__":
     variant = args_dict['variant']
     output_dir = args_dict['output_dir']
     run_mode = args_dict.get('mode', None)
-    if run_mode and run_mode in ['slurm_singularity', 'sss']:
+    if run_mode and run_mode in ['slurm_singularity', 'sss', 'htp']:
         import os
         doodad_config.extra_launch_info['slurm-job-id'] = os.environ.get(
             'SLURM_JOB_ID', None
