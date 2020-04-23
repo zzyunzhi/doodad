@@ -126,14 +126,16 @@ class DockerMode(LaunchMode):
             use_tty = False
             extra_args += ' -d '  # detach is optional
 
-        if use_tty:
-            docker_prefix = 'docker run %s -ti %s /bin/bash -c ' % (
-            extra_args, self.docker_image)
-        else:
-            docker_prefix = 'docker run %s %s /bin/bash -c ' % (
-            extra_args, self.docker_image)
         if self.gpu:
-            docker_prefix = 'nvidia-' + docker_prefix
+            docker_run = 'docker run --gpus all'
+        else:
+            docker_run = 'docker run'
+        if use_tty:
+            docker_prefix = '%s %s -ti %s /bin/bash -c ' % (
+                docker_run, extra_args, self.docker_image)
+        else:
+            docker_prefix = '%s %s %s /bin/bash -c ' % (
+                docker_run, extra_args, self.docker_image)
         main_cmd = cmd_list.to_string()
         full_cmd = docker_prefix + ("\'%s\'" % main_cmd)
         return full_cmd
@@ -510,27 +512,11 @@ class EC2SpotDocker(DockerMode):
         ))
 
         if self.gpu:
-            # sio.write('echo "LSMOD NVIDIA:"\n')
-            # sio.write("lsmod | grep nvidia\n")
-            # sio.write("echo 'Waiting for dpkg lock...'\n")
-            # wait for lock
-            # sio.write("""
-            #    while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
-            #       sleep 1
-            #    done
-            # """)
-            # sio.write("sudo apt-get install nvidia-modprobe\n")
-            # sio.write("wget -P /tmp https://github.com/NVIDIA/nvidia-docker/releases/download/v1.0.1/nvidia-docker_1.0.1-1_amd64.deb\n")
-            # sio.write("sudo dpkg -i /tmp/nvidia-docker*.deb && rm /tmp/nvidia-docker*.deb\n")
-            sio.write("""
-                for i in {1..800}; do su -c "nvidia-modprobe -u -c=0" ubuntu && break || sleep 3; done
-                systemctl start nvidia-docker
-            """)
             sio.write("echo 'Testing nvidia-smi'\n")
             sio.write("nvidia-smi\n")
             sio.write("echo 'Testing nvidia-smi inside docker'\n")
             sio.write(
-                "nvidia-docker run --rm {docker_image} nvidia-smi\n".format(
+                "docker run --gpus all --rm {docker_image} nvidia-smi\n".format(
                     docker_image=self.docker_image))
 
         if self.checkpoint and self.checkpoint.restore:
