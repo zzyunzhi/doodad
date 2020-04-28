@@ -222,11 +222,9 @@ def run_experiment(
     Get the mode
     """
     mode_kwargs = {}
-    if use_gpu and mode == 'ec2':
+    if mode == 'ec2':
         image_id = config.REGION_TO_GPU_AWS_IMAGE_ID[region]
-        doodad_config.extra_launch_info['aws_ami_id'] = singularity_image
-    else:
-        image_id = config.REGION_TO_GPU_AWS_IMAGE_ID[region]
+        doodad_config.extra_launch_info['aws_ami_id'] = image_id
     if hasattr(config, "AWS_S3_PATH"):
         aws_s3_path = config.AWS_S3_PATH
     else:
