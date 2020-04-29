@@ -112,12 +112,23 @@ class DockerMode(LaunchMode):
             use_tty = False
             extra_args += ' -d '  # detach is optional
 
-        if use_tty:
-            docker_prefix = 'docker run %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
-        else:
-            docker_prefix = 'docker run %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+        # if use_tty:
+        #     docker_prefix = 'docker run %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
+        # else:
+        #     docker_prefix = 'docker run %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+        # if self.gpu:
+        #     docker_prefix = 'nvidia-'+docker_prefix
+
         if self.gpu:
-            docker_prefix = 'nvidia-'+docker_prefix
+            docker_prefix = 'docker run --gpus all'
+        else:
+            docker_prefix = 'docker run'
+
+        if use_tty:
+            docker_prefix = docker_prefix + ' %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
+        else:
+            docker_prefix = docker_prefix + ' %s %s /bin/bash -c ' % (extra_args, self.docker_image)
+
         main_cmd = cmd_list.to_string()
         full_cmd = docker_prefix + ("\'%s\'" % main_cmd)
         return full_cmd
@@ -477,7 +488,8 @@ class EC2SpotDocker(DockerMode):
             sio.write("echo 'Testing nvidia-smi'\n")
             sio.write("nvidia-smi\n")
             sio.write("echo 'Testing nvidia-smi inside docker'\n")
-            sio.write("nvidia-docker run --rm {docker_image} nvidia-smi\n".format(docker_image=self.docker_image))
+            # sio.write("nvidia-docker run --rm {docker_image} nvidia-smi\n".format(docker_image=self.docker_image))
+            sio.write("docker run --gpus all --rm {docker_image} nvidia-smi\n".format(docker_image=self.docker_image))
 
         if self.checkpoint and self.checkpoint.restore:
             raise NotImplementedError()
