@@ -40,13 +40,15 @@ class SSHCredentials(object):
         prefix = self.get_ssh_cmd_prefix()
         return prefix + " '%s'"%cmd
 
-    def get_ssh_script_cmd(self, script_name):
+    def get_ssh_script_cmd(self, script_name, quiet=False):
         cmd = 'ssh %s@%s' % (self.username, self.hostname)
         if self.identity_file:
             cmd += ' -i %s' % self.identity_file
         else:
             raise NotImplementedError()
         cmd += " 'bash -s' < %s" % script_name
+        if quiet:
+            cmd += " 1>/dev/null 2>&1"
         return cmd
 
     def get_scp_cmd(self, source, destination, recursive=True):

@@ -88,8 +88,20 @@ class DockerMode(LaunchMode):
         assert value in [True, False]
         self.use_nvidia_docker_for_gpu = value
 
-    def get_docker_cmd(self, main_cmd, extra_args='', use_tty=True, verbose=True, pythonpath=None, pre_cmd=None, post_cmd=None,
-            checkpoint=False, no_root=False, use_docker_generated_name=False):
+    def get_docker_cmd(
+            self,
+            main_cmd,
+            extra_args='',
+            use_tty=True,
+            verbose=True,
+            pythonpath=None,
+            pre_cmd=None,
+            post_cmd=None,
+            checkpoint=False,
+            no_root=False,
+            use_docker_generated_name=False,
+            remove_container_after_use=False,
+    ):
         cmd_list= CommandBuilder()
         if pre_cmd:
             cmd_list.extend(pre_cmd)
@@ -124,6 +136,9 @@ class DockerMode(LaunchMode):
 
         if not self.interactive_docker:
             extra_args += ' -d'
+
+        if remove_container_after_use:
+            extra_args += ' --rm'
 
         # if use_tty:
         #     docker_prefix = 'docker run %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
@@ -171,7 +186,7 @@ class LocalDocker(DockerMode):
                 raise NotImplementedError(type(mount))
 
         full_cmd = self.get_docker_cmd(cmd, extra_args=mnt_args, pythonpath=py_path,
-                checkpoint=self.checkpoints)
+                checkpoint=self.checkpoints, remove_container_after_use=True)
         call_and_wait(full_cmd, verbose=verbose, dry=dry,
                       skip_wait=self.skip_wait)
 
@@ -239,16 +254,24 @@ class SSHDocker(DockerMode):
         remote_cmds.append(docker_cmd)
         remote_cmds.extend(remote_cleanup_commands)
 
-        with tempfile.NamedTemporaryFile('w+', suffix='.sh') as ntf:
-            for cmd in remote_cmds:
-                if verbose:
-                    ntf.write('echo "%s$ %s"\n' % (self.credentials.user_host, cmd))
-                ntf.write(cmd+'\n')
-            ntf.seek(0)
-            ssh_cmd = self.credentials.get_ssh_script_cmd(ntf.name)
+        ntf = tempfile.NamedTemporaryFile('w+', suffix='.sh', delete=False)
+        for cmd in remote_cmds:
+            if verbose:
+                ntf.write('echo "%s$ %s"\n' % (self.credentials.user_host, cmd))
+            ntf.write(cmd + '\n')
+        ntf.seek(0)
+        ssh_cmd = self.credentials.get_ssh_script_cmd(ntf.name, quiet=(not self.interactive_docker))
+        call_and_wait(ssh_cmd, dry=dry, verbose=verbose, skip_wait=(not self.interactive_docker))
 
-            call_and_wait(ssh_cmd, dry=dry, verbose=verbose)
-
+        # with tempfile.NamedTemporaryFile('w+', suffix='.sh') as ntf:
+        #     for cmd in remote_cmds:
+        #         if verbose:
+        #             ntf.write('echo "%s$ %s"\n' % (self.credentials.user_host, cmd))
+        #         ntf.write(cmd+'\n')
+        #     ntf.seek(0)
+        #     ssh_cmd = self.credentials.get_ssh_script_cmd(ntf.name)
+        #
+        #     call_and_wait(ssh_cmd, dry=dry, verbose=verbose, skip_wait=(not self.interactive_docker))
 
 def dedent(s):
     lines = [l.strip() for l in s.split('\n')]
