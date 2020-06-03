@@ -77,6 +77,16 @@ class DockerMode(LaunchMode):
         self.docker_image = image
         self.docker_name = uuid.uuid4()
         self.gpu = gpu
+        self.interactive_docker = False
+        self.use_nvidia_docker_for_gpu = False
+
+    def set_interactive_docker_value(self, value):
+        assert value in [True, False]
+        self.interactive_docker = value
+
+    def set_nvidia_docker_for_gpu_value(self, value):
+        assert value in [True, False]
+        self.use_nvidia_docker_for_gpu = value
 
     def get_docker_cmd(self, main_cmd, extra_args='', use_tty=True, verbose=True, pythonpath=None, pre_cmd=None, post_cmd=None,
             checkpoint=False, no_root=False, use_docker_generated_name=False):
@@ -112,6 +122,9 @@ class DockerMode(LaunchMode):
             use_tty = False
             extra_args += ' -d '  # detach is optional
 
+        if not self.interactive_docker:
+            extra_args += ' -d'
+
         # if use_tty:
         #     docker_prefix = 'docker run %s -ti %s /bin/bash -c ' % (extra_args, self.docker_image)
         # else:
@@ -120,7 +133,10 @@ class DockerMode(LaunchMode):
         #     docker_prefix = 'nvidia-'+docker_prefix
 
         if self.gpu:
-            docker_prefix = 'docker run --gpus all'
+            if self.use_nvidia_docker_for_gpu:
+                docker_prefix = 'nvidia-docker run'
+            else:
+                docker_prefix = 'docker run --gpus all'
         else:
             docker_prefix = 'docker run'
 
@@ -192,6 +208,7 @@ class SSHDocker(DockerMode):
                         #file_hash = hash_file(gzip_path)  # TODO: store all code in a special "caches" folder
                         remote_mnt_dir = os.path.join(self.tmp_dir, os.path.splitext(base_name)[0])
                         remote_tar = os.path.join(self.tmp_dir, base_name)
+                        print(mount, gzip_file, remote_tar)
                         scp_cmd = self.credentials.get_scp_cmd(gzip_file, remote_tar)
                         call_and_wait(scp_cmd, dry=dry, verbose=verbose)
                     remote_cmds.append('mkdir -p %s' % remote_mnt_dir)
@@ -212,8 +229,12 @@ class SSHDocker(DockerMode):
         if self.checkpoint and self.checkpoint.restore:
             raise NotImplementedError()
         else:
-            docker_cmd = self.get_docker_cmd(main_cmd, use_tty=False, extra_args=mnt_args, pythonpath=py_path)
-
+            docker_cmd = self.get_docker_cmd(
+                main_cmd,
+                use_tty=False,
+                extra_args=mnt_args,
+                pythonpath=py_path,
+            )
 
         remote_cmds.append(docker_cmd)
         remote_cmds.extend(remote_cleanup_commands)
