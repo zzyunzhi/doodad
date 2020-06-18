@@ -18,6 +18,8 @@ from .ec2.aws_util import s3_upload, s3_exists
 from .gcp.gcp_util import GCP_STARTUP_SCRIPT_PATH, GCP_SHUTDOWN_SCRIPT_PATH, \
         upload_file_to_gcp_storage, get_machine_type, get_gpu_type
 
+cached_mounts = {}
+
 class LaunchMode(object):
     def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
         raise NotImplementedError()
@@ -72,10 +74,13 @@ LOCAL = Local()
 
 
 class DockerMode(LaunchMode):
-    def __init__(self, image='ubuntu:16.04', gpu=False):
+    def __init__(self, image='ubuntu:16.04', gpu=False, docker_name=None):
         super(DockerMode, self).__init__()
         self.docker_image = image
-        self.docker_name = uuid.uuid4()
+        if docker_name is None:
+            self.docker_name = uuid.uuid4()
+        else:
+            self.docker_name = docker_name
         self.gpu = gpu
         self.interactive_docker = False
         self.use_nvidia_docker_for_gpu = False
@@ -217,15 +222,22 @@ class SSHDocker(DockerMode):
         for mount in mount_points:
             if isinstance(mount, MountLocal):
                 if mount.read_only:
-                    with mount.gzip() as gzip_file:
-                        # scp
-                        base_name = os.path.basename(gzip_file)
-                        #file_hash = hash_file(gzip_path)  # TODO: store all code in a special "caches" folder
-                        remote_mnt_dir = os.path.join(self.tmp_dir, os.path.splitext(base_name)[0])
-                        remote_tar = os.path.join(self.tmp_dir, base_name)
-                        print(mount, gzip_file, remote_tar)
-                        scp_cmd = self.credentials.get_scp_cmd(gzip_file, remote_tar)
-                        call_and_wait(scp_cmd, dry=dry, verbose=verbose)
+                    if mount not in cached_mounts:
+                        with mount.gzip() as gzip_file:
+                            # scp
+                            base_name = os.path.basename(gzip_file)
+                            #file_hash = hash_file(gzip_path)  # TODO: store all code in a special "caches" folder
+                            remote_mnt_dir = os.path.join(self.tmp_dir, os.path.splitext(base_name)[0])
+                            remote_tar = os.path.join(self.tmp_dir, base_name)
+                            scp_cmd = self.credentials.get_scp_cmd(gzip_file, remote_tar)
+                            call_and_wait(scp_cmd, dry=dry, verbose=verbose)
+                            cached_mounts[mount] = {
+                                'remote_tar': remote_tar,
+                                'remote_mnt_dir': remote_mnt_dir,
+                            }
+                    else:
+                        remote_tar = cached_mounts[mount]['remote_tar']
+                        remote_mnt_dir = cached_mounts[mount]['remote_mnt_dir']
                     remote_cmds.append('mkdir -p %s' % remote_mnt_dir)
                     unzip_cmd = 'tar -xf %s -C %s' % (remote_tar, remote_mnt_dir)
                     remote_cmds.append(unzip_cmd)
@@ -249,6 +261,8 @@ class SSHDocker(DockerMode):
                 use_tty=False,
                 extra_args=mnt_args,
                 pythonpath=py_path,
+                use_docker_generated_name=False,
+                # remove_container_after_use=True,
             )
 
         remote_cmds.append(docker_cmd)
