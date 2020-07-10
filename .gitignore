@@ -101,3 +101,5 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+doodad/easy_launch/config_private.py
