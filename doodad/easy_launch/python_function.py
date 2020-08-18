@@ -83,6 +83,7 @@ def run_experiment(
         spot_price=None,
         verbose=False,
         num_exps_per_instance=1,
+        docker_image=None,
         # sss settings
         time_in_mins=None,
         slurm_config_name=None,
@@ -100,6 +101,8 @@ def run_experiment(
         x = variant['x']
         y = variant['y']
         print("sum", x+y)
+        with open(doodad_config.output_dir, "w") as f:
+          f.write('sum = %f' % x + y)
 
     variant = {
         'x': 4,
@@ -107,10 +110,20 @@ def run_experiment(
     }
     run_experiment(foo, variant, exp_name='my-experiment', mode='ec2')
     ```
-    Results are saved to
+
+    For outputs to be saved properly, make sure you write to the directory
+    in `doodad_config.output_dir`. Do NOT output to
+    `easy_launch.config.LOCAL_LOG_DIR` or any other directory in config.
+    This ensures that when you run code on GCP or AWS, it'll save to the proper
+    location and get synced accordingly.
+
+    Within the corresponding output mount, the outputs are saved to
     `base_log_dir/<date>-my-experiment/<date>-my-experiment-<unique-id>`
-    By default, the base_log_dir is determined by
-    `config.LOCAL_LOG_DIR/`
+
+    For local experiment, the base_log_dir is determined by
+    `config.LOCAL_LOG_DIR/`. For GCP or AWS, base_log_dir will be synced to some
+    bucket.
+
     :param method_call: a function that takes in a dictionary as argument
     :param mode: A string:
      - 'local'
@@ -162,7 +175,7 @@ def run_experiment(
         use_gpu=use_gpu,
         gpu_id=gpu_id,
         git_infos=git_infos,
-        script_name=main.__file__,
+        script_name=' '.join(sys.argv),
         extra_launch_info=dict(
             base_exp_name=base_exp_name,
             instance_type=str(instance_type),
@@ -190,16 +203,16 @@ def run_experiment(
     GPU vs normal configs
     """
     if use_gpu:
-        docker_image = config.GPU_DOODAD_DOCKER_IMAGE
+        docker_image = docker_image or config.GPU_DOODAD_DOCKER_IMAGE
         if instance_type is None:
             instance_type = config.GPU_INSTANCE_TYPE
         else:
-            assert instance_type[0] == 'g'
+            assert instance_type[0] in {'g', 'p'}
         if spot_price is None:
             spot_price = config.GPU_SPOT_PRICE
         doodad_config.extra_launch_info['docker_image'] = docker_image
     else:
-        docker_image = config.DOODAD_DOCKER_IMAGE
+        docker_image = docker_image or config.DOODAD_DOCKER_IMAGE
         if instance_type is None:
             instance_type = config.INSTANCE_TYPE
         if spot_price is None:
