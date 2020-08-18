@@ -65,9 +65,9 @@ from doodad.easy_launch.python_function import run_experiment
 def function(doodad_config, variant):
     print("The learning rate is", variant['learning_rate'])
     print("You are", variant['parameter'])
-    print("Save to", doodad_config.output_dir)
+    print("Save to", doodad_config.base_log_dir)
     # save outputs (e.g. logs, parameter snapshots, etc.) to
-    # doodad_config.output_dir
+    # doodad_config.base_log_dir
 
 if __name__ == "__main__":
     variant = dict(

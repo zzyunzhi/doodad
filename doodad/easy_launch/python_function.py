@@ -101,7 +101,7 @@ def run_experiment(
         x = variant['x']
         y = variant['y']
         print("sum", x+y)
-        with open(doodad_config.output_dir, "w") as f:
+        with open(doodad_config.base_log_dir, "w") as f:
           f.write('sum = %f' % x + y)
 
     variant = {
@@ -112,7 +112,7 @@ def run_experiment(
     ```
 
     For outputs to be saved properly, make sure you write to the directory
-    in `doodad_config.output_dir`. Do NOT output to
+    in `doodad_config.base_log_dir`. Do NOT output to
     `easy_launch.config.LOCAL_LOG_DIR` or any other directory in config.
     This ensures that when you run code on GCP or AWS, it'll save to the proper
     location and get synced accordingly.
