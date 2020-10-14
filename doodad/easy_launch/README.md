@@ -49,7 +49,6 @@ The supported modes are:
  - 'ec2': run your code on AWS EC2.
  - 'gcp': run your code on GCP.
  - 'htp': generate a taskfile and script for using BRC's high-throughput script
- - 'slurm_singularity': submit a slurm job using singularity
  - 'sss': generate a script to run on some slurm job using singularity
 
 The last three are specific to slurm. If you're in the RAIL lab, you'll want to use `htp` and `sss` mode for BRC.
@@ -80,13 +79,18 @@ NON_CODE_DIRS_TO_MOUNT = [
 After that, the settings are specific to the different mode you want to use
 
 ## BRC (sss and htp mode)
-_Disclaimer: this workflow is not super polished, but it works._
+_Disclaimer: this workflow is not polished, but it works. Hopefully we'll update this BRC workflow to be more similar to [this doodad version](https://github.com/rail-berkeley/doodad), but that's a work in progress._
 
 Setting up doodad + BRC takes a bit of extra leg-work, because you can't launched code from outside BRC using a API. Instead, you need to log in to the BRC node and launch code from inside of it.
 The overall workflow is:
 1. Run `run_experiment(...)` on your local machine, which will generate one or two scripts for you to SCP over, depending on the mode.
 2. Copy the scripts **and your code** over to to BRC.
 3. Run the script on BRC.
+4. (optionally) Wait until your script starts running before launching any other job.
+
+One warning with this workflow is that **you can't change your code too much before your job actually runs.**
+Your jobs on BRC use a local copy of your code (step 2), and so then the job may fail if the code it depends on changed between when you queued up the job and when it started running.
+In my experience, this doesn't happen too often since I hide new features behind boolean flags that default to the old behavior, but it's important to keep in mind. Don't repeat step 2 for another job if it'll cause the first job to fail!
 
 Some more details on how to set up your config file and for each component is given below.
 
