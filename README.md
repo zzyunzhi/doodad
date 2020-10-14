@@ -56,7 +56,7 @@ See the [wiki](https://github.com/justinjfu/doodad/wiki/Home)
 - Fix output directories when using docker showing up as root permissions.
 
 # `doodad.easy_launch`
-The directory `doodad.easy_launch` is intended to make it very easy to launch experiments. Usage:
+The `doodad.easy_launch` module is intended to make it very easy to launch experiments. Usage:
 
 ```python
 from doodad.easy_launch.python_function import run_experiment
@@ -87,3 +87,5 @@ To use it you well need to create a private version of the configuration file:
 ```bash
 cp doodad/easy_launch/config.py doodad/easy_launch/config_private.py
 ```
+
+See the [README](doodad/easy_launch/README.md) for more details.

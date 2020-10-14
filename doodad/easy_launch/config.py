@@ -52,10 +52,9 @@ SINGULARITY_PRE_CMDS = [
 
 
 """
-BRC/Slurm Settings
+Slurm Script Settings (or HTP).
 
-These are basically the same settings as above, but for the remote machine
-where you will be running the generated script.
+The comments assume you're running on BRC.
 """
 SLURM_CONFIGS = dict(
     cpu=dict(
@@ -72,20 +71,28 @@ SLURM_CONFIGS = dict(
         n_cpus_per_task=2,
     ),
 )
+# This is necessary for the GPU machines on BRC.
 BRC_EXTRA_SINGULARITY_ARGS = '--writable -B /usr/lib64 -B /var/lib/dcv-gl'
+# Make sure this points to wherever you copy your taskfile to on BRC.
 TASKFILE_PATH_ON_BRC = 'TODO'
 
 
+# This is the same as `CODE_DIRS_TO_MOUNT` but the paths should be relative to
+# wherever you're running the slurm jobs (e.g. on BRC).
 SSS_CODE_DIRS_TO_MOUNT = [
 ]
 SSS_NON_CODE_DIRS_TO_MOUNT = [
 ]
+# where do you want doodad to output to when using SSS (or HTP) mode?
 SSS_LOG_DIR = '/global/scratch/vitchyr/doodad-log'
 
 
+# point to your singularity image with an absolute path on BRC.
 SSS_GPU_IMAGE = 'TODO'
 SSS_CPU_IMAGE = 'TODO'
+# point to `doodad/easy_launch/run_experimenty.py`
 SSS_RUN_DOODAD_EXPERIMENT_SCRIPT_PATH = 'TODO'
+# add any extra pre-commands to your script
 SSS_PRE_CMDS = [
     'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH'
 ]
