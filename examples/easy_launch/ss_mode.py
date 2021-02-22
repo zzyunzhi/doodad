@@ -8,7 +8,7 @@ def example(doodad_config, variant):
 
 
 if __name__ == "__main__":
-    for seed in range(1):
+    for seed in range(3):
         variant = dict(
             seed=seed,
         )

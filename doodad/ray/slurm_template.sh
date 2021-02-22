@@ -4,7 +4,7 @@
 # THIS FILE IS A TEMPLATE AND IT SHOULD NOT BE DEPLOYED TO PRODUCTION!
 ${PARTITION_OPTION}
 #SBATCH --job-name=${JOB_NAME}
-#SBATCH --output=${JOB_NAME}.log
+#SBATCH --output=${OUTPUT}
 ${GIVEN_NODE}
 ### This script works for any number of nodes, Ray will find and manage all resources
 #SBATCH --nodes=${NUM_NODES}

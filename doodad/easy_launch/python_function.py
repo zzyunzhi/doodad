@@ -288,7 +288,7 @@ def run_experiment(
             slurm_config_kwargs["time_in_mins"] = time_in_mins
         if slurm_config_kwargs["time_in_mins"] is None:
             raise ValueError('Must approximate/set time in minutes')
-        slurm_config = SlurmConfig(**slurm_config_kwargs)
+        slurm_config = SlurmConfig(**slurm_config_kwargs, job_name=exp_name, base_log_dir=base_log_dir)
         if mode == 'slurm_singularity':
             dmode = doodad.mode.SlurmSingularity(
                 image=singularity_image,
@@ -433,7 +433,7 @@ def sanitize_base_log_dir(base_log_dir, mode):
     if mode == 'ssh' and base_log_dir is None:
         base_log_dir = config.SSH_LOG_DIR
     if base_log_dir is None:
-        if mode in {'sss', 'htp'}:
+        if mode in {'sss', 'htp', 'ss'}:
             base_log_dir = config.SSS_LOG_DIR
         else:
             base_log_dir = config.LOCAL_LOG_DIR

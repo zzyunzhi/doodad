@@ -14,7 +14,8 @@ LOAD_ENV = "${LOAD_ENV}"
 
 
 def create_ray_slurm_script(
-        exp_name, command,
+        job_name, command,
+        base_log_dir,
         num_nodes=1, node='', num_gpus=0,
         partition='', load_env='',
         extra_flags='',
@@ -25,8 +26,8 @@ def create_ray_slurm_script(
     else:
         node_info = ""
 
-    job_name = "{}_{}".format(exp_name,
-                              time.strftime("%m%d-%H%M", time.localtime()))
+    # job_name = "{}_{}".format(exp_name,
+    #                           time.strftime("%m%d-%H%M", time.localtime()))
 
     partition_option = "#SBATCH --partition={}".format(
         partition) if partition else ""
@@ -35,6 +36,10 @@ def create_ray_slurm_script(
     with open(template_file, "r") as f:
         text = f.read()
     text = text.replace(JOB_NAME, job_name)
+
+    output_file = os.path.join(base_log_dir, f'{job_name}-%j-%x-node-%n-task-%t.out')
+    text = text.replace("${OUTPUT}", output_file)
+
     text = text.replace(NUM_NODES, str(num_nodes))
 
     if num_gpus > 0:
@@ -61,8 +66,13 @@ def create_ray_slurm_script(
 
     # ===== Save the script =====
     script_file = "{}.sh".format(job_name)
+    script_file = os.path.join(base_log_dir, script_file)
     with open(script_file, "w") as f:
         f.write(text)
+
+    print('launching', script_file)
+    # print('outputs will be saved to:')
+    # print(output_file)
 
     return script_file
 

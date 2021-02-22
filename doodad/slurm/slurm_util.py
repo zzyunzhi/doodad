@@ -13,8 +13,10 @@ class SlurmConfig(object):
     """
     def __init__(
             self,
+            job_name,
             account_name,
             partition,
+            base_log_dir,
             time_in_mins,
             max_num_cores_per_node,
             n_gpus=0,
@@ -24,6 +26,8 @@ class SlurmConfig(object):
     ):
         if n_gpus > 0 and n_cpus_per_task < 2:
             raise ValueError("Must have at least 2 cpus per GPU task")
+        self.job_name = job_name
+        self.base_log_dir = base_log_dir
         self.account_name = account_name
         self.partition = partition
         self.time_in_mins = time_in_mins

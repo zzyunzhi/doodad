@@ -1074,7 +1074,6 @@ class ScriptSlurm(LaunchMode):
         self.skip_wait = skip_wait
 
     def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
-        verbose = True
         return SlurmSingularity.launch_command(
             self,
             cmd=cmd, mount_points=mount_points, dry=dry, verbose=verbose
@@ -1103,7 +1102,7 @@ class ScriptSlurm(LaunchMode):
         )
 
         script_file = create_ray_slurm_script(
-            exp_name='default',
+            job_name=config.job_name,
             command=command,
             num_gpus=config.n_gpus,
             partition=config.partition,
@@ -1111,6 +1110,7 @@ class ScriptSlurm(LaunchMode):
             node='',
             load_env=pre_cmd,
             extra_flags=config.extra_flags,
+            base_log_dir=config.base_log_dir,
         )
         full_cmd = f"sbatch {script_file}"
 
