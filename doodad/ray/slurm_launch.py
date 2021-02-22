@@ -1,4 +1,8 @@
-# copied from ray doc
+# copied from ray doc for reference
+# use ray_util.create_ray_slurm_script instead
+
+raise
+
 # slurm-launch.py
 # Usage:
 # python slurm-launch.py --exp-name test \
