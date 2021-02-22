@@ -22,6 +22,8 @@ from .gcp.gcp_util import (
     GCP_STARTUP_SCRIPT_PATH, GCP_SHUTDOWN_SCRIPT_PATH,
     upload_file_to_gcp_storage, get_machine_type, get_gpu_type,
 )
+from .ray.ray_util import create_ray_slurm_script
+import math
 
 
 class LaunchMode(object):
@@ -877,12 +879,7 @@ class SingularityMode(LaunchMode):
         self._extra_args = extra_args
         self._verbose_cmd = verbose_cmd
 
-    def create_singularity_cmd(
-            self,
-            main_cmd,
-            mount_points=None,
-    ):
-        extra_args = self._extra_args
+    def build_pre_cmd(self, mount_points) -> utils.CommandBuilder:
         cmd_list = utils.CommandBuilder()
         if self.pre_cmd:
             cmd_list.extend(self.pre_cmd)
@@ -903,6 +900,16 @@ class SingularityMode(LaunchMode):
         if py_paths:
             cmd_list.append('export PYTHONPATH=$PYTHONPATH:%s' % (
                 ':'.join(py_paths)))
+
+        return cmd_list
+
+    def create_singularity_cmd(
+            self,
+            main_cmd,
+            mount_points=None,
+    ):
+        extra_args = self._extra_args
+        cmd_list = self.build_pre_cmd(mount_points)
 
         cmd_list.append(main_cmd)
         if self.post_cmd:
@@ -1049,3 +1056,62 @@ class ScriptSlurmSingularity(SlurmSingularity):
             verbose=True,
             overwrite=self._overwrite_script,
         )
+
+
+class ScriptSlurm(LaunchMode):
+    def __init__(self, slurm_config: SlurmConfig,
+                 skip_wait=False,
+                 gpu=False, pre_cmd=None,
+                 post_cmd=None,
+                 verbose_cmd=False,
+                 overwrite_script=False):
+        super().__init__()
+        self.gpu = gpu
+        self.pre_cmd = pre_cmd
+        self.post_cmd = post_cmd
+        self._verbose_cmd = verbose_cmd
+        self._slurm_config = slurm_config
+        self.skip_wait = skip_wait
+
+    def launch_command(self, cmd, mount_points=None, dry=False, verbose=False):
+        verbose = True
+        return SlurmSingularity.launch_command(
+            self,
+            cmd=cmd, mount_points=mount_points, dry=dry, verbose=verbose
+        )
+
+        # full_cmd = self.create_slurm_command(
+        #     cmd, mount_points=mount_points,
+        # )
+        # utils.call_and_wait(
+        #     full_cmd, verbose=verbose, dry=dry, skip_wait=self.skip_wait
+        # )
+
+    def create_slurm_command(self, main_cmd, mount_points=None):
+        config = self._slurm_config
+        pre_cmd = SingularityMode.build_pre_cmd(self, mount_points=mount_points).to_string()
+        command = utils.CommandBuilder()
+        command.append(main_cmd)
+        if self.post_cmd is not None:
+            command.append(self.post_cmd)
+        command = command.to_string()
+
+        n_tasks = 1
+        num_cpus = n_tasks * config.n_cpus_per_task
+        n_nodes = config.n_nodes or math.ceil(
+            num_cpus / config.max_num_cores_per_node
+        )
+
+        script_file = create_ray_slurm_script(
+            exp_name='default',
+            command=command,
+            num_gpus=config.n_gpus,
+            partition=config.partition,
+            num_nodes=n_nodes,
+            node='',
+            load_env=pre_cmd,
+            extra_flags=config.extra_flags,
+        )
+        full_cmd = f"sbatch {script_file}"
+
+        return full_cmd

@@ -276,7 +276,7 @@ def run_experiment(
             gpu=use_gpu,
             pre_cmd=config.SINGULARITY_PRE_CMDS,
         )
-    elif mode in {'slurm_singularity', 'sss', 'htp'}:
+    elif mode in {'slurm_singularity', 'sss', 'htp', 'ss'}:
         if slurm_config_name is None:
             slurm_config_name = "gpu" if use_gpu else "cpu"
         slurm_config_kwargs = config.SLURM_CONFIGS[slurm_config_name]
@@ -309,7 +309,7 @@ def run_experiment(
                 overwrite_task_script=_global_is_first_launch,
                 n_tasks_total=_global_n_tasks_total,
             )
-        else:
+        elif mode == 'sss':
             dmode = doodad.mode.ScriptSlurmSingularity(
                 image=singularity_image,
                 gpu=use_gpu,
@@ -317,6 +317,11 @@ def run_experiment(
                 extra_args=config.BRC_EXTRA_SINGULARITY_ARGS,
                 slurm_config=slurm_config,
                 overwrite_script=_global_is_first_launch,
+            )
+        else:
+            dmode = doodad.mode.ScriptSlurm(
+                gpu=use_gpu, pre_cmd=config.SSS_PRE_CMDS,
+                slurm_config=slurm_config,
             )
     elif mode == 'ec2':
         # Do this separately in case someone does not have EC2 configured
@@ -392,7 +397,7 @@ def run_experiment(
         base_log_dir_for_script = config.OUTPUT_DIR_FOR_DOODAD_TARGET
     elif mode == 'ssh':
         base_log_dir_for_script = config.OUTPUT_DIR_FOR_DOODAD_TARGET
-    elif mode in {'local_singularity', 'slurm_singularity', 'sss', 'htp'}:
+    elif mode in {'local_singularity', 'slurm_singularity', 'sss', 'htp', 'ss'}:
         base_log_dir_for_script = base_log_dir
         launch_locally = True
         if mode in {'sss', 'htp'}:
@@ -488,7 +493,7 @@ def create_mounts(
         sync_interval=180,
         local_input_dir_to_mount_point_dict=None,
 ):
-    if mode in {'sss', 'htp'}:
+    if mode in {'sss', 'htp', 'ss'}:
         code_mounts = SSS_CODE_MOUNTS
         non_code_mounts = SSS_NON_CODE_MOUNTS
     else:
@@ -529,7 +534,7 @@ def create_mounts(
             sync_interval=sync_interval,
             include_types=config.GCP_FILE_TYPES_TO_SAVE,
         )
-    elif mode in {'local', 'local_singularity', 'slurm_singularity', 'sss', 'htp'}:
+    elif mode in {'local', 'local_singularity', 'slurm_singularity', 'sss', 'htp', 'ss'}:
         # To save directly to local files, skip mounting
         output_mount = mount.MountLocal(
             local_dir=base_log_dir,

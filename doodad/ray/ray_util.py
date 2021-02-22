@@ -7,7 +7,6 @@ import os
 template_file = os.path.join(os.path.dirname(__file__), 'slurm_template.sh')
 JOB_NAME = "${JOB_NAME}"
 NUM_NODES = "${NUM_NODES}"
-NUM_GPUS_PER_NODE = "${NUM_GPUS_PER_NODE}"
 PARTITION_OPTION = "${PARTITION_OPTION}"
 COMMAND_PLACEHOLDER = "${COMMAND_PLACEHOLDER}"
 GIVEN_NODE = "${GIVEN_NODE}"
@@ -18,6 +17,7 @@ def create_ray_slurm_script(
         exp_name, command,
         num_nodes=1, node='', num_gpus=0,
         partition='', load_env='',
+        extra_flags='',
 ):
     if node:
         # assert args.num_nodes == 1
@@ -36,7 +36,19 @@ def create_ray_slurm_script(
         text = f.read()
     text = text.replace(JOB_NAME, job_name)
     text = text.replace(NUM_NODES, str(num_nodes))
-    text = text.replace(NUM_GPUS_PER_NODE, str(num_gpus))
+
+    if num_gpus > 0:
+        gpu_info = f"#SBATCH --gres=gpu:{num_gpus}"
+    else:
+        gpu_info = ""
+    text = text.replace("${GPU_INFO}", gpu_info)
+
+    if extra_flags:
+        extra_flags = f"#SBATCH {extra_flags}"
+    else:
+        extra_flags = ""
+    text = text.replace("${EXTRA_FLAGS}", extra_flags)
+
     text = text.replace(PARTITION_OPTION, partition_option)
     text = text.replace(COMMAND_PLACEHOLDER, str(command))
     text = text.replace(LOAD_ENV, str(load_env))
