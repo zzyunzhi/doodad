@@ -1,46 +1,41 @@
 import subprocess
 import sys
-import time
 import os
 
 
 template_file = os.path.join(os.path.dirname(__file__), 'slurm_template.sh')
-JOB_NAME = "${JOB_NAME}"
-NUM_NODES = "${NUM_NODES}"
-PARTITION_OPTION = "${PARTITION_OPTION}"
-COMMAND_PLACEHOLDER = "${COMMAND_PLACEHOLDER}"
-GIVEN_NODE = "${GIVEN_NODE}"
-LOAD_ENV = "${LOAD_ENV}"
 
 
 def create_ray_slurm_script(
         job_name, command,
         base_log_dir,
-        num_nodes=1, node='', num_gpus=0,
-        partition='', load_env='',
+        n_cpus_per_task,
+        partition, time_in_mins,
+        num_nodes=1, num_gpus=0,
+        load_env='',
         extra_flags='',
 ):
-    if node:
-        # assert args.num_nodes == 1
-        node_info = "#SBATCH -w {}".format(node)
-    else:
-        node_info = ""
-
     # job_name = "{}_{}".format(exp_name,
     #                           time.strftime("%m%d-%H%M", time.localtime()))
-
-    partition_option = "#SBATCH --partition={}".format(
-        partition) if partition else ""
 
     # ===== Modified the template script =====
     with open(template_file, "r") as f:
         text = f.read()
-    text = text.replace(JOB_NAME, job_name)
+    text = text.replace('${JOB_NAME}', str(job_name))
+    text = text.replace('${CPUS_PER_TASKS}', str(n_cpus_per_task))
+    text = text.replace('${PARTITION}', str(partition))
 
-    output_file = os.path.join(base_log_dir, f'{job_name}-%j-%x-node-%n-task-%t.out')
+    output_file = os.path.join(base_log_dir, f'%j-%x-node-%n-task-%t.out')
     text = text.replace("${OUTPUT}", output_file)
 
-    text = text.replace(NUM_NODES, str(num_nodes))
+    text = text.replace("${NUM_NODES}", str(num_nodes))
+    text = text.replace("${TIME_IN_MINS}", str(time_in_mins))
+
+    if num_nodes > 1:
+        node_info = f"#SBATCH --exclude=iris-hp-z8"
+    else:
+        node_info = ""
+    text = text.replace("${NODE_INFO}", node_info)
 
     if num_gpus > 0:
         gpu_info = f"#SBATCH --gres=gpu:{num_gpus}"
@@ -54,15 +49,10 @@ def create_ray_slurm_script(
         extra_flags = ""
     text = text.replace("${EXTRA_FLAGS}", extra_flags)
 
-    text = text.replace(PARTITION_OPTION, partition_option)
-    text = text.replace(COMMAND_PLACEHOLDER, str(command))
-    text = text.replace(LOAD_ENV, str(load_env))
-    text = text.replace(GIVEN_NODE, node_info)
-    text = text.replace(
-        "# THIS FILE IS A TEMPLATE AND IT SHOULD NOT BE DEPLOYED TO "
-        "PRODUCTION!",
-        "# THIS FILE IS MODIFIED AUTOMATICALLY FROM TEMPLATE AND SHOULD BE "
-        "RUNNABLE!")
+    text = text.replace("${LOAD_ENV}", str(load_env))
+
+    text = text.replace("${RAY_TEMP_DIR}", '/iris/u/yzzhang/tmp/ray/')
+    text = text.replace("${COMMAND_PLACEHOLDER}", str(command))
 
     # ===== Save the script =====
     script_file = "{}.sh".format(job_name)
