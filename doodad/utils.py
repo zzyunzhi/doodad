@@ -83,7 +83,7 @@ class CommandBuilder(object):
             self.cmds.extend(other)
 
     def to_string(self, separator=';'):
-        return ';'.join([str(cmd) for cmd in self.cmds])
+        return separator.join([str(cmd) for cmd in self.cmds])
 
     def __str__(self):
         return self.to_string()

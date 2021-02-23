@@ -1088,12 +1088,12 @@ class ScriptSlurm(LaunchMode):
 
     def create_slurm_command(self, main_cmd, mount_points=None):
         config = self._slurm_config
-        pre_cmd = SingularityMode.build_pre_cmd(self, mount_points=mount_points).to_string()
+        pre_cmd = SingularityMode.build_pre_cmd(self, mount_points=mount_points).to_string('\n')
         command = utils.CommandBuilder()
         command.append(main_cmd)
         if self.post_cmd is not None:
             command.append(self.post_cmd)
-        command = command.to_string()
+        command = command.to_string('\n')
 
         n_tasks = 1
         num_cpus = n_tasks * config.n_cpus_per_task
