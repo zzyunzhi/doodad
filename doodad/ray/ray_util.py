@@ -53,7 +53,7 @@ def create_ray_slurm_script(
     with open(script_file, "w") as f:
         f.write(text)
 
-    print('launching', script_file)
+    # print('launching', script_file)
     # print('outputs will be saved to:')
     # print(output_file)
 
