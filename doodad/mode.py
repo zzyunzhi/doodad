@@ -1061,12 +1061,11 @@ class ScriptSlurmSingularity(SlurmSingularity):
 class ScriptSlurm(LaunchMode):
     def __init__(self, slurm_config: SlurmConfig,
                  skip_wait=False,
-                 gpu=False, pre_cmd=None,
+                 pre_cmd=None,
                  post_cmd=None,
                  verbose_cmd=False,
                  overwrite_script=False):
         super().__init__()
-        self.gpu = gpu
         self.pre_cmd = pre_cmd
         self.post_cmd = post_cmd
         self._verbose_cmd = verbose_cmd

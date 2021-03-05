@@ -320,7 +320,7 @@ def run_experiment(
             )
         else:
             dmode = doodad.mode.ScriptSlurm(
-                gpu=use_gpu, pre_cmd=config.SSS_PRE_CMDS,
+                pre_cmd=config.SSS_PRE_CMDS,
                 slurm_config=slurm_config,
             )
     elif mode == 'ec2':
